@@ -118,3 +118,67 @@ def test_in_reply_to_and_references_tokens():
     assert (m.in_reply_to, m.references) == ("a@x", ("z@x", "a@x"))
     assert (parse_mail(make_mail("s@x")).in_reply_to, parse_mail(make_mail("s@x")).references) == (
         None, ())
+
+
+# --- final review M2: netdev's patchwork-bot ----------------------------------
+
+PWBOT = "patchwork-bot+netdevbpf@kernel.org"
+PWBOT_PATCH = """Hello:
+
+This patch was applied to netdev/net.git (main)
+by Jakub Kicinski <kuba@kernel.org>:
+
+On Thu, 21 Mar 2024 10:15:33 +0000 you wrote:
+> Tie the PCI glue's runtime PM to the device.
+>
+> [...]
+
+Here is the summary with links:
+  - [net] net: stmmac: Do not enable/disable runtime PM for PCI devices
+    https://git.kernel.org/netdev/net/c/0123456789ab
+
+You are awesome, thank you!
+-- 
+Deet-doot-dot, I am a bot.
+https://korg.docs.kernel.org/patchwork/pwbot.html
+"""
+PWBOT_SERIES = """Hello:
+
+This series was applied to netdev/net-next.git (main)
+by Paolo Abeni <pabeni@redhat.com>:
+
+On Mon, 18 Mar 2024 13:55:46 +0000 you wrote:
+> [...]
+
+Here is the summary with links:
+  - [net-next,v2,1/2] net: stmmac: first
+    https://git.kernel.org/netdev/net-next/c/aaaaaaaaaaaa
+  - [net-next,v2,2/2] net: stmmac: second
+    https://git.kernel.org/netdev/net-next/c/bbbbbbbbbbbb
+
+You are awesome, thank you!
+"""
+
+
+def test_patchwork_bot_applies():
+    me = frozenset({"me@example.org"})
+    root = parse_mail(make_mail("r@x", subject="[PATCH net] net: stmmac: Do not enable/disable"
+                                " runtime PM for PCI devices"))
+    bot = parse_mail(make_mail("pw@x", frm=f"patchwork-bot+netdevbpf <{PWBOT}>", in_reply_to="r@x",
+                               subject="Re: [PATCH net] net: stmmac: Do not enable/disable"
+                               " runtime PM for PCI devices",
+                               date="Sat, 23 Mar 2024 05:30:28 +0000", body=PWBOT_PATCH))
+    assert bot.applied and bot.applied_commits == (
+        ("net: stmmac: Do not enable/disable runtime PM for PCI devices", "0123456789ab"),)
+    assert standing([root, bot], me).kind == "applied"
+    series = parse_mail(make_mail("pw2@x", frm=f"patchwork-bot+netdevbpf <{PWBOT}>",
+                                  in_reply_to="c@x", subject="Re: [PATCH net-next v2 0/2] x",
+                                  body=PWBOT_SERIES))
+    assert series.applied and series.applied_commits == (
+        ("net: stmmac: first", "aaaaaaaaaaaa"), ("net: stmmac: second", "bbbbbbbbbbbb"))
+
+
+def test_quoted_applied_line_is_not_an_apply():
+    m = parse_mail(make_mail("q@x", frm="X <x@y.org>", in_reply_to="r@x", subject="Re: [PATCH] x",
+                             body="> This patch was applied to netdev/net.git (main)\nWhy?\n"))
+    assert not m.applied

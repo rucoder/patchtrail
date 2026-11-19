@@ -12,9 +12,14 @@ REVIEW_TAG = re.compile(
     r"^(Reviewed-by|Acked-by|Tested-by|Nacked-by|Reported-by|Suggested-by):",
     re.IGNORECASE)
 _MAINTAINER_TAG = re.compile(r"(Reviewed|Acked|Tested)-by:", re.IGNORECASE)
+# b4 ty's "[1/2] subject" over "commit: <sha>" (or a .../commit/<sha> URL), and
+# netdev's patchwork-bot's "  - [net,v2,1/2] subject" over ".../c/<sha>".
 _THANKS_ITEM = re.compile(r"^\s*\[\d+/\d+\]\s+(.+?)\s*$")
+_PWBOT_ITEM = re.compile(r"^\s+-\s+(?:\[[^\]]*\]\s*)?(.+?)\s*$")
 _THANKS_SHA = re.compile(
-    r"^\s+(?:commit:\s*|\S*/commit/)([0-9a-f]{12,40})\s*$", re.IGNORECASE)
+    r"^\s+(?:commit:\s*|\S*/commit/|https?://git\.kernel\.org/\S*/c/)([0-9a-f]{12,40})\s*$",
+    re.IGNORECASE)
+_APPLIED = re.compile(r"Applied|This (?:patch|series) was applied to ")
 _PATCH_N_OF_M = re.compile(r"\s[1-9]\d*/\d+\]")
 _MSGID_TOKEN = re.compile(r"<([^<>\s]+)>")
 
@@ -104,7 +109,7 @@ class MailInfo:
 def _thanks_commits(lines: list[str]) -> tuple[tuple[str, str], ...]:
     out = []
     for i, line in enumerate(lines):
-        m = _THANKS_ITEM.match(line)
+        m = _THANKS_ITEM.match(line) or _PWBOT_ITEM.match(line)
         if not m:
             continue
         nxt = next((l for l in lines[i + 1:] if l.strip()), "")
@@ -145,7 +150,7 @@ def parse_mail(raw: bytes) -> MailInfo:
         subject=subject,
         is_reply=is_reply,
         tags=tuple(l.strip() for l in lines if is_reply and REVIEW_TAG.match(l)),
-        applied=is_reply and any(l.startswith("Applied") for l in lines),
+        applied=is_reply and any(_APPLIED.match(l) for l in lines),
         applied_commits=_thanks_commits(lines) if is_reply else (),
         change_id=change_id,
         to_cc=tuple(a.lower() for _, a in recipients if a),
