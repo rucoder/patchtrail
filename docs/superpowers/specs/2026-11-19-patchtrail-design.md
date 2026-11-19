@@ -467,7 +467,7 @@ Python package, so running the service needs no Node.
 ## 15. Repository
 
 ```
-pyproject.toml  Makefile  README.md  LICENSE?
+pyproject.toml  Makefile  README.md  LICENSE (Apache-2.0)
 src/patchtrail/
   cli.py  config.py  db.py  schema/  fetch.py  service.py  server.py
   snapshot.py          state documents, diffs, read state
@@ -485,6 +485,7 @@ docs/
   (mainline, stable branches, tags, a queue directory), so the logic can be checked without
   kernel.org.
 - Commits use `git commit -s`. No hand-written Signed-off-by, and no session trailers.
+- License: Apache-2.0 (decided by the user on 2026-11-19), with an SPDX-License-Identifier line at the top of every source file.
 - `.superpowers/` is gitignored.
 
 ## 16. Approaches considered

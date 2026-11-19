@@ -55,6 +55,7 @@ plan ships.
   - `urllib.request.urlopen` is patched to raise.
   - b4 and lore are faked, and git fixture repos are served over `file://`.
 - **Default config values:** `listen = "0.0.0.0:8470"` and `interval_hours = 3`.
+- **License:** Apache-2.0 (the user's choice). Every source file starts with an SPDX line: `# SPDX-License-Identifier: Apache-2.0` (Python, Makefile, TOML, shell), `-- SPDX-License-Identifier: Apache-2.0` (SQL), `// SPDX-License-Identifier: Apache-2.0` (TypeScript, Plan 2). After a shebang, it goes on the second line. `tests/test_spdx.py` enforces this for `src/` and `tests/`.
 
 ## Review Focus
 
