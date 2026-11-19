@@ -151,3 +151,60 @@ def test_merge_by_change_id_keeps_links_and_note(conn):
     assert merge_by_change_id(conn) == ["new"]
     assert store.links(conn, a) == ["https://u/1", "https://u/2"]
     assert store.patch_by_id(conn, a)["note"] == "from new"
+
+
+# --- final review C3: my replies on the stable list are not backports ----------
+
+IOWQ = "io_uring/io-wq: apply the current cpuset to new workers"
+IOWQ_SHA = "0659e44ce739ecd856164c75a5325b7959a2921d"
+
+
+def stable_mails():
+    """What lore's stable inbox has from me: a reply in the thread of my patch (it
+    was Cc'd to stable), my backport sent in reply to stable's FAILED mail, and my
+    reply to the backport."""
+    from lorefix import entry
+
+    return [
+        entry("myreply@x", f"Re: [PATCH] {IOWQ}", inbox="stable", updated="2026-11-12T14:54:49Z",
+              in_reply_to="felix@x",
+              body=f"On 12/11/2026 Felix wrote:\n> Could this go to stable?\n\n"
+                   f"Yes, it fixes 84eacf177faa.\n> commit {IOWQ_SHA[:12]} upstream.\n"),
+        entry("bp@x", f"[PATCH 6.1.y] {IOWQ}", inbox="stable", updated="2026-11-20T09:00:00Z",
+              in_reply_to="2026112001-failed@gregkh",
+              body=f"commit {IOWQ_SHA} upstream.\n\nWorkers ignored the cpuset.\n\n"
+                   "---\n+++ b/io_uring/io-wq.c\n"),
+        entry("bp-ping@x", f"Re: [PATCH 6.1.y] {IOWQ}", inbox="stable",
+              updated="2026-11-25T09:00:00Z", in_reply_to="bp@x", body="Ping?\n"),
+    ]
+
+
+def lore_search(fake):
+    from patchtrail.sources import lore
+
+    return lambda inbox, query, **kw: lore.search(inbox, query, urlopen=fake)
+
+
+def test_my_reply_on_the_stable_list_is_no_backport(conn):
+    from lorefix import FakeLore
+
+    pid = store.add_patch(conn, "iowq-cpuset", now=1)
+    store.add_revision(conn, pid, "root@x", subject=f"[PATCH] {IOWQ}", author="me@example.org")
+    store.set_commit(conn, pid, IOWQ_SHA, IOWQ, "manual")
+    fake = FakeLore()
+    fake.add("stable", r"^f:me@example\.org$", stable_mails())
+    r = discover(conn, FakeSource([]), ME, now=5, search=lore_search(fake))
+    assert r.backports == ["iowq-cpuset"]
+    assert [(x["root_msgid"], x["kind"], x["branch"]) for x in store.revisions(conn, pid)] == [
+        ("root@x", "series", None), ("bp@x", "backport", "6.1")]
+
+
+def test_my_reply_without_a_tracked_commit_is_no_backport(conn):
+    from lorefix import FakeLore
+
+    pid = store.add_patch(conn, "iowq-cpuset", now=1)
+    store.add_revision(conn, pid, "root@x", subject=f"[PATCH] {IOWQ}", author="me@example.org")
+    fake = FakeLore()
+    fake.add("stable", r"^f:me@example\.org$", stable_mails()[:1])
+    assert discover(conn, FakeSource([]), ME, now=5, search=lore_search(fake)).backports == []
+    assert [x["root_msgid"] for x in store.revisions(conn, pid)] == ["root@x"]

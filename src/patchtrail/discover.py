@@ -132,11 +132,16 @@ def discover(conn, source, addresses: list[str], *, now: int,
             store.set_field(conn, pid, "read_on_first_snapshot", 1)
         res.new_patches.append(name)
 
+    # My mails on the stable list: replies included, as a backport is often sent in
+    # reply to stable's FAILED mail. Only a posting for a stable branch is one; a
+    # reply in a thread (a patch Cc'd to stable, a backport's thread) is not.
     for addr in addresses:
         for e in search("stable", f"f:{addr}"):
-            if _known(conn, e.msgid):
+            if _known(conn, e.msgid) or e.subject.lower().startswith("re:"):
                 continue
             series, sha = backport_of(e.subject, e.summary)
+            if series is None:
+                continue
             pid = _backport_patch(conn, e, sha)
             if pid is None:
                 continue

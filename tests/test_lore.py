@@ -176,3 +176,20 @@ def test_summary_is_the_text_of_lores_xhtml_content():
     assert backport_of(e.subject, e.summary) == ("5.10", "9051d629dbf7a998a40f7eac65a9512b01bc3bb8")
     [f, _] = search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, END_PAGE))
     assert "git cherry-pick -x b8ed9da102beb2d0926a1d7a7e652392190151c0" in f.summary
+
+
+def test_fake_lore_pages_read_like_real_ones():
+    from lorefix import FakeLore, entry
+
+    lore = FakeLore(per_page=2)
+    lore.add("stable", r"^f:me@example\.org$", [
+        entry(f"m{i}@x", f"[PATCH 6.1.y] fix é {i}", inbox="stable", updated="2026-11-20T09:00:00Z",
+              in_reply_to="f@gregkh" if i == 0 else None,
+              body=f"commit {'a' * 40} upstream.\n\n+++ b/io.c\nsee https://x.org/{i}\n")
+        for i in range(3)])
+    got = search("stable", "f:me@example.org", urlopen=lore)
+    assert [e.msgid for e in got] == ["m0@x", "m1@x", "m2@x"]
+    assert [u.rsplit("&", 1)[-1] for u in lore.urls] == ["x=A", "o=2", "o=3"]
+    assert got[0].is_reply and not got[1].is_reply and got[0].subject == "[PATCH 6.1.y] fix é 0"
+    assert got[0].summary == f"commit {'a' * 40} upstream.\n\n+++ b/io.c\nsee https://x.org/0\n"
+    assert search("stable", "f:other@x", urlopen=lore) == []

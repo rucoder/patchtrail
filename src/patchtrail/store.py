@@ -122,6 +122,12 @@ def revisions(conn, patch_id):
     ).fetchall()
 
 
+def newest_series(revs):
+    """The newest series revision of a patch's revisions, None if it has none."""
+    series = [r for r in revs if r["kind"] == "series"]
+    return series[-1] if series else None
+
+
 def revision_by_msgid(conn, msgid):
     return conn.execute(
         "SELECT * FROM revisions WHERE root_msgid=?", (msgid,)

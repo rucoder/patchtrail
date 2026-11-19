@@ -91,8 +91,7 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
     (its root and the mails below it), which drive its standing."""
     pid = row["id"]
     revs = store.revisions(conn, pid)
-    series = [r for r in revs if r["kind"] == "series"]
-    newest = series[-1] if series else None
+    newest = store.newest_series(revs)
     raws, parents, mails = {}, {}, []
     for m in store.patch_mails(conn, pid):
         raws[m["msgid"]], parents[m["msgid"]] = bytes(m["raw"]), m["in_reply_to"]

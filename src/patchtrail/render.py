@@ -81,15 +81,15 @@ def summary_lines(conn, patch, *, mine: frozenset[str] = frozenset(), width: int
     pad = " " * w
     state = state or current_state(conn, patch, mine)
     mails = store.mail_infos(conn, patch["id"])
-    revs = store.revisions(conn, patch["id"])
-    subject = head_subject(mails) or (revs[-1]["subject"] if revs else "")
+    newest = store.newest_series(store.revisions(conn, patch["id"]))
+    subject = head_subject(mails) or (newest["subject"] if newest else "")
     if not subject and (commits := store.commits(conn, patch["id"])):
         subject = commits[0]["subject"] or ""
     n = len(state["mails"])
     new = len(_new_msgids(conn, patch, state))
     count = f"{n} message{'s' * (n != 1)}" + (f", {new} new" if new else "")
-    if revs:
-        link = f"{LORE}/{revs[-1]['root_msgid']}/"
+    if newest:
+        link = f"{LORE}/{newest['root_msgid']}/"
     else:
         first = store.commits(conn, patch["id"])
         link = f"{first[0]['sha'][:12]} {first[0]['subject'] or ''}".strip() if first else "(no revision)"

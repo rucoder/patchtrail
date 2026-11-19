@@ -213,3 +213,15 @@ def test_status_fetch_validates_names_first(populated, capsys, monkeypatch):
     monkeypatch.setattr("patchtrail.cli.run_fetch", boom)
     assert main(["status", "--fetch", "nope"]) == 1
     assert "ptl: not tracked: nope" in capsys.readouterr().err
+
+
+def test_summary_links_the_newest_series_revision(conn):           # final review C3
+    pid = store.add_patch(conn, "p", project="kernel", now=1)
+    store.add_revision(conn, pid, "v1@x", subject="[PATCH] fix io", author="me@example.org")
+    store.add_revision(conn, pid, "v2@x", version=2, subject="[PATCH v2] fix io",
+                       author="me@example.org")
+    store.add_revision(conn, pid, "bp@x", version=3, subject="[PATCH v3 6.1.y] fix io",
+                       kind="backport", branch="6.1")
+    lines = render.summary_lines(conn, store.patch_by_id(conn, pid))
+    assert lines[0].endswith("[PATCH v2] fix io")
+    assert lines[2].strip() == "https://lore.kernel.org/all/v2@x/"
