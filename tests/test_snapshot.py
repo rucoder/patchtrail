@@ -2,8 +2,8 @@
 from patchtrail import store
 from patchtrail.mail import Standing
 from patchtrail.projects import get_project
-from patchtrail.snapshot import (changes, history, latest, mark_read, mark_unread, record,
-                                 since_read, stage_of, unread)
+from patchtrail.snapshot import (changes, compose_state, history, latest, mark_read, mark_unread,
+                                 record, since_read, stage_of, unread)
 
 
 def st(**kw):
@@ -97,3 +97,29 @@ def test_latest(conn):
     record(conn, pid, st(), now=7)
     i, at, state = latest(conn, pid)
     assert at == 7 and state == st()
+
+
+def test_trailers_stay_when_the_patch_is_applied():               # final review M1
+    from mails import make_mail
+
+    from patchtrail.mail import parse_mail, standing
+    from patchtrail.render import change_line
+    me = frozenset({"me@example.org"})
+    root = parse_mail(make_mail("r@x", date="Mon, 09 Nov 2026 10:00:00 +0000"))
+    rb = parse_mail(make_mail("a@x", frm="Rev <rev@k.org>", subject="Re: [PATCH] fix io",
+                              in_reply_to="r@x", date="Tue, 10 Nov 2026 10:00:00 +0000",
+                              body="Reviewed-by: Rev <rev@k.org>\n"))
+    ty = parse_mail(make_mail("t@x", frm="Maint <m@k.org>", subject="Re: [PATCH] fix io",
+                              in_reply_to="r@x", date="Wed, 11 Nov 2026 10:00:00 +0000",
+                              body="Applied, thanks!\n"))
+
+    def state(mails):
+        s = standing(mails, me)
+        return compose_state(project=get_project("kernel"), standing=s, mails=mails, fragment={},
+                             manual_applied=False, closed=None, closed_note=None)
+    reviewed, applied = state([root, rb]), state([root, rb, ty])
+    assert applied["standing"]["text"] == "APPLIED by Maint, 2026-11-11"
+    assert applied["trailers"] == reviewed["trailers"] == ["Reviewed-by Rev"]
+    assert [c.field for c in changes(reviewed, applied)] == ["stage", "standing", "mail"]
+    assert all(not change_line(None, c).startswith("trailers") for c in changes(reviewed, applied)
+               if c.field != "mail")

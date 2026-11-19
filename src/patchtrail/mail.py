@@ -184,10 +184,8 @@ def standing(mails: list[MailInfo], mine: frozenset[str], *, following: bool = F
         return Standing("none")
     mails = sorted(mails, key=lambda m: m.date)
     others = [m for m in mails if m.is_reply and m.from_addr not in mine]
-    applied = [m for m in others if m.applied]
-    if applied:
-        m = applied[-1]
-        return Standing("applied", m.from_name, m.date)
+    # The review tags of every reply but mine, whatever the standing: an applied
+    # patch keeps its trailers.
     tags: list[str] = []
     for m in others:
         for t in m.tags:
@@ -195,6 +193,10 @@ def standing(mails: list[MailInfo], mine: frozenset[str], *, following: bool = F
             person = email.utils.parseaddr(person)[0] or person.strip()
             if f"{tag} {person}" not in tags:
                 tags.append(f"{tag} {person}")
+    applied = [m for m in others if m.applied]
+    if applied:
+        m = applied[-1]
+        return Standing("applied", m.from_name, m.date, tuple(tags))
     last = mails[-1]
     if last.from_addr in mine:
         kind = "waiting_reply"
