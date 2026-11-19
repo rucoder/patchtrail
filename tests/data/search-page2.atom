@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:thr="http://purl.org/syndication/thread/1.0">
+<title>search</title>
+<entry><author><name>Me</name><email>Me@Example.org</email></author>
+<title>Re: [PATCH 1/2] second</title>
+<updated>2026-11-12T10:00:00Z</updated>
+<link href="http://lore.kernel.org/all/p2@x/"/>
+<thr:in-reply-to href="http://lore.kernel.org/all/p1@x/" ref="p1@x"/>
+</entry>
+<entry><author><name>Me</name><email>Me@Example.org</email></author>
+<title>[PATCH] third</title>
+<updated>2026-11-13T10:00:00Z</updated>
+<link href="http://lore.kernel.org/all/p3@x/"/>
+</entry>
+</feed>
