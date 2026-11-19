@@ -235,3 +235,21 @@ def populated_kernel(populated):
     snapshot.record(populated, pid, st, epoch("2026-11-13"))
     populated.commit()
     return populated
+
+
+# Task 16: the old scripts' files, as lkml-watch left them.
+
+@pytest.fixture
+def old_scripts_home(hermetic):
+    from mails import make_mail, mbox
+
+    cfg = hermetic / ".config" / "lkml-watch"
+    state = hermetic / ".local" / "state" / "lkml-watch"
+    cfg.mkdir(parents=True)
+    state.mkdir(parents=True)
+    (cfg / "threads").write_text("old-thread old1@x # from lkml-watch\n")
+    raw = make_mail("old1@x", subject="[PATCH] kvm: fix bar",
+                    to="linux-kernel@vger.kernel.org")
+    (state / "old-thread.mbox").write_bytes(mbox(raw))
+    (state / "old-thread.seen").write_text("old1@x\n")
+    return hermetic

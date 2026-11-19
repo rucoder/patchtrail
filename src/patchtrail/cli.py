@@ -550,6 +550,10 @@ def cmd_import(args, conn, cfg, mine) -> int:
     return 0
 
 
+def cmd_setup(args, conn, cfg, mine) -> int:
+    raise AssertionError("setup runs before the database is opened")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="ptl")
     ap.add_argument("--version", action="store_true", help="print version and exit")
@@ -644,6 +648,14 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("series", metavar="SERIES")
     p.add_argument("dir", nargs="?", metavar="DIR")
     p = add("import", cmd_import, "import lkml-watch and stable-watch state")
+    p = add("setup", cmd_setup, "check git, write the config, seed the Linux clone, import")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--seed", type=Path, metavar="PATH", help="a local linux.git to seed from")
+    g.add_argument("--no-seed", action="store_true", help="do not seed")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--import", dest="do_import", action="store_true", default=None,
+                   help="import lkml-watch and stable-watch state")
+    g.add_argument("--no-import", dest="do_import", action="store_false")
     return ap
 
 
@@ -655,6 +667,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.cmd is None:
         args = ap.parse_args(["status"])
+    if args.cmd == "setup":
+        from patchtrail.setup import run_setup
+
+        return run_setup(seed=args.seed, no_seed=args.no_seed, do_import=args.do_import)
     cfg = load_config(paths())
     conn = db.connect(paths().db)
     try:
