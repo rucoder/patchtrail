@@ -791,3 +791,17 @@ def test_lore_only_first_snapshot(conn, cfgp):
     state = snapshot.latest(conn, pid)[2]
     assert state["standing"]["kind"] == "waiting_reply" and state["commits"] == []
     assert not snapshot.unread(conn, pid)
+
+
+def test_project_from_the_newest_revision_once_versions_are_known(conn, cfgp):
+    pid = store.add_patch(conn, "p", now=1)
+    store.add_revision(conn, pid, "v3@x")                         # `ptl add`: version unknown
+    store.add_revision(conn, pid, "v2@x", version=2)
+    src = FakeSource({
+        "v3@x": [make_mail("v3@x", subject="[PATCH v3] hw: x", to="qemu-devel@nongnu.org",
+                           date="Thu, 12 Nov 2026 10:00:00 +0000")],
+        "v2@x": [make_mail("v2@x", subject="[PATCH v2] hw: x", to="grub-devel@gnu.org",
+                           date="Tue, 10 Nov 2026 10:00:00 +0000")]})
+    run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    assert [r["root_msgid"] for r in store.revisions(conn, pid)] == ["v2@x", "v3@x"]
+    assert store.patch_by_id(conn, pid)["project"] == "qemu"

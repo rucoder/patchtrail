@@ -210,8 +210,9 @@ class _Run:
             synced.update(roots)
             if any(roots[i] is None and i in not_fetched for i in roots):
                 self.unfetched.add(row["id"])
-            series_roots = [roots[r["id"]] for r in revs[row["id"]]
-                            if r["kind"] == "series" and roots[r["id"]] is not None]
+            # In the revisions' order now that their roots gave them their versions.
+            series_roots = [roots[r["id"]] for r in store.revisions(self.conn, row["id"])
+                            if r["kind"] == "series" and roots.get(r["id"]) is not None]
             if series_roots and not row["project_override"]:
                 newest = series_roots[-1]
                 project = detect_project(newest.to_cc, newest.subject)
