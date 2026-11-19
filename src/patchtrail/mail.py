@@ -163,9 +163,10 @@ class Standing:
 
 
 def standing(mails: list[MailInfo], mine: frozenset[str], *, following: bool = False) -> Standing:
-    """Where a thread stands. `mails` must be in date order (store.mail_infos is)."""
+    """Where a thread stands, from its mails (sorted by date here; ties keep order)."""
     if not mails:
         return Standing("none")
+    mails = sorted(mails, key=lambda m: m.date)
     others = [m for m in mails if m.is_reply and m.from_addr not in mine]
     applied = [m for m in others if m.applied]
     if applied:

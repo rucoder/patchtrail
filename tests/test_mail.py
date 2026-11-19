@@ -42,11 +42,13 @@ def test_waiting_and_your_turn_wording():
                               date="Fri, 24 Jul 2026 10:00:00 +0000", in_reply_to="r@x",
                               body="Reviewed-by: Tomita Moeko <t@m.org>\n"))
     assert standing([root], me).text() == "waiting for a reply since 2026-11-11"
-    assert standing([root, rb], me).text() == "Reviewed-by Tomita Moeko; waiting for the maintainer since 2026-07-24"
+    root_jul = parse_mail(make_mail("r@x", date="Fri, 17 Jul 2026 08:49:42 +0000"))
+    assert standing([root_jul, rb], me).text() == "Reviewed-by Tomita Moeko; waiting for the maintainer since 2026-07-24"
     q = parse_mail(make_mail("b@x", frm="Jiri Pirko <j@p.org>", subject="Re: [PATCH] fix io",
                              date="Thu, 21 Mar 2024 10:00:00 +0000", in_reply_to="r@x", body="Why?\n"))
-    assert standing([root, q], me).text() == "Jiri Pirko replied 2024-03-21: your turn"
-    assert standing([root, q], me, following=True).text() == "Jiri Pirko replied 2024-03-21"
+    root_2024 = parse_mail(make_mail("r@x", date="Tue, 19 Mar 2024 12:04:10 +0000"))
+    assert standing([root_2024, q], me).text() == "Jiri Pirko replied 2024-03-21: your turn"
+    assert standing([root_2024, q], me, following=True).text() == "Jiri Pirko replied 2024-03-21"
 
 
 def test_odd_mail_does_not_raise():
@@ -88,3 +90,12 @@ def test_mail_infos_sorted_by_date(conn):
     store.upsert_mails(conn, rid, [make_mail("late@x", date="Thu, 12 Nov 2026 12:00:00 +0000"),
                                    make_mail("early@x")], now=5)
     assert [m.msgid for m in store.mail_infos(conn, pid)] == ["early@x", "late@x"]
+
+
+def test_standing_sorts_by_date():
+    me = frozenset({"me@example.org"})
+    root = parse_mail(make_mail("r@x"))
+    q = parse_mail(make_mail("b@x", frm="Jiri Pirko <j@p.org>", subject="Re: [PATCH] fix io",
+                             date="Thu, 12 Nov 2026 10:00:00 +0000", in_reply_to="r@x", body="Why?\n"))
+    assert standing([q, root], me).text() == standing([root, q], me).text() \
+        == "Jiri Pirko replied 2026-11-12: your turn"
