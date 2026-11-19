@@ -106,3 +106,37 @@ def kv_set(conn, key, value):
         (key, value),
     )
     conn.commit()
+
+
+def upsert_mails(conn, revision_id, raws, now) -> list[str]:
+    """Store mails of a revision; return the msgids that were not stored before."""
+    from patchtrail.mail import parse_mail
+
+    new = []
+    for raw in raws:
+        m = parse_mail(raw)
+        if not m.msgid:
+            continue
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO mails (msgid, revision_id, in_reply_to, date,"
+            " from_name, from_addr, subject, raw, first_seen) VALUES (?,?,?,?,?,?,?,?,?)",
+            (m.msgid, revision_id, m.in_reply_to, m.date, m.from_name, m.from_addr,
+             m.subject, raw, now),
+        )
+        if cur.rowcount:
+            new.append(m.msgid)
+    conn.commit()
+    return new
+
+
+def patch_mails(conn, patch_id):
+    return conn.execute(
+        "SELECT m.* FROM mails m JOIN revisions r ON r.id = m.revision_id"
+        " WHERE r.patch_id=? ORDER BY m.date, m.rowid", (patch_id,)
+    ).fetchall()
+
+
+def mail_infos(conn, patch_id):
+    from patchtrail.mail import parse_mail
+
+    return [parse_mail(bytes(r["raw"])) for r in patch_mails(conn, patch_id)]
