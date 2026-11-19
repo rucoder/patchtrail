@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "patchtrail"
+version = "0.1.0"
+description = "Track kernel patches and stable releases from the mailing lists"
+requires-python = ">=3.12"
+dependencies = ["b4>=0.13"]
+
+[project.scripts]
+patchtrail = "patchtrail.cli:run"
+ptl = "patchtrail.cli:run"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+patchtrail = ["schema/*.sql", "data/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
