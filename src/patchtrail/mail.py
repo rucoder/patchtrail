@@ -40,6 +40,14 @@ def _finish(lines: list[bytes]) -> bytes:
     return b"".join(lines)
 
 
+def _decode_words(value: str) -> str:
+    try:
+        value = str(email.header.make_header(email.header.decode_header(value)))
+    except Exception:
+        pass
+    return " ".join(value.split())
+
+
 def _header(msg, field: str) -> str:
     value = msg.get(field)
     if value is None:
@@ -109,7 +117,8 @@ def parse_mail(raw: bytes) -> MailInfo:
         date = int(email.utils.parsedate_to_datetime(msg["Date"]).timestamp())
     except Exception:
         date = 0
-    name, addr = email.utils.parseaddr(_header(msg, "From"))
+    name, addr = email.utils.parseaddr(str(msg.get("From") or ""))
+    name = _decode_words(name)
     subject = _header(msg, "Subject")
     is_reply = subject.lower().startswith("re:")
     lines = text_body(raw)[0].splitlines()
@@ -120,7 +129,7 @@ def parse_mail(raw: bytes) -> MailInfo:
             break
     irt = _header(msg, "In-Reply-To").strip("<>")
     recipients = email.utils.getaddresses(
-        [_header(msg, "To"), _header(msg, "Cc")])
+        [str(v) for v in msg.get_all("To", []) + msg.get_all("Cc", [])])
     return MailInfo(
         msgid=_header(msg, "Message-ID").strip("<>"),
         in_reply_to=irt or None,

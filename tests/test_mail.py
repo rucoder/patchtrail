@@ -99,3 +99,10 @@ def test_standing_sorts_by_date():
                              date="Thu, 12 Nov 2026 10:00:00 +0000", in_reply_to="r@x", body="Why?\n"))
     assert standing([q, root], me).text() == standing([root, q], me).text() \
         == "Jiri Pirko replied 2026-11-12: your turn"
+
+
+def test_encoded_display_name_with_comma():
+    m = parse_mail(make_mail("c@x", frm="=?utf-8?q?M=C3=BCller=2C_Hans?= <h@x.org>",
+                             to="=?utf-8?q?Doe=2C_J?= <j@x.org>, k@x.org"))
+    assert (m.from_name, m.from_addr) == ("M\xfcller, Hans", "h@x.org")
+    assert m.to_cc == ("j@x.org", "k@x.org")
