@@ -142,3 +142,36 @@ def test_network_git_calls_never_prompt(tmp_path, kfix, monkeypatch):
     for args, env in net:
         assert env is not None and {k: env.get(k) for k in NET_ENV} == NET_ENV, args
         assert env["GIT_CONFIG_GLOBAL"] == os.environ["GIT_CONFIG_GLOBAL"]   # merged over the environment
+
+
+# --- final review I2: git never repacks on its own ------------------------------
+
+def no_auto_gc(path):
+    get = lambda key: Git(path).run("config", "--local", "--get", key, ok=(0, 1)).strip()  # noqa: E731
+    return get("gc.auto") == "0" and get("maintenance.auto") == "false"
+
+
+def test_new_repos_never_gc_on_their_own(tmp_path, swclone):
+    plain = KernelRepo(tmp_path / "plain.git"); plain.ensure(None)
+    seeded = KernelRepo(tmp_path / "seeded.git"); seeded.ensure(swclone)
+    assert no_auto_gc(plain.path) and no_auto_gc(seeded.path)
+    packs = sorted(p.stem for p in (seeded.path / "objects" / "pack").glob("*.pack"))
+    assert packs and sorted(p.stem for p in (seeded.path / "objects" / "pack").glob("*.keep")) == packs
+    assert not list((swclone / "objects" / "pack").glob("*.keep"))
+
+
+def test_existing_repo_gets_the_config_on_open(tmp_path):
+    path = tmp_path / "linux.git"
+    Git(tmp_path).run("init", "-q", "--bare", str(path))      # made before this config existed
+    assert not no_auto_gc(path)
+    KernelRepo(path).ensure(None)
+    assert no_auto_gc(path)
+
+
+def test_stable_queue_never_gcs_on_its_own(tmp_path, kfix):
+    q = StableQueue(tmp_path / "stable-queue")
+    q.update(kfix.urls.queue, NullProgress())
+    assert no_auto_gc(q.path)
+    Git(q.path).run("config", "--local", "--unset", "gc.auto")
+    q.update(kfix.urls.queue, NullProgress())
+    assert no_auto_gc(q.path)

@@ -68,6 +68,14 @@ class Git:
     def is_ancestor(self, a, b) -> bool:
         return self.ok("merge-base", "--is-ancestor", a, b)
 
+    def no_auto_gc(self) -> None:
+        """Keep git from repacking on its own (gc --auto, maintenance --auto after a
+        fetch): a repack in the middle of a run takes minutes and un-shares packs
+        hardlinked from a seed, gigabytes more on disk. Writes only what differs."""
+        for key, value in (("gc.auto", "0"), ("maintenance.auto", "false")):
+            if self.run("config", "--local", "--get", key, ok=(0, 1)).strip() != value:
+                self.run("config", "--local", key, value)
+
 
 class KernelRepo(Git):
     def __init__(self, path: Path):
@@ -76,10 +84,12 @@ class KernelRepo(Git):
 
     def ensure(self, seed: Path | None) -> None:
         if self.path.is_dir():
+            self.no_auto_gc()
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         if not seed:
             self._plain(["git", "init", "-q", "--bare", str(self.path)])
+            self.no_auto_gc()
             return
         # A local clone hardlinks the seed's packs. --mirror takes every ref, not
         # only heads and tags: stable-watch keeps all of its under refs/stable-watch/.
@@ -94,6 +104,10 @@ class KernelRepo(Git):
             moves += [f"create {REFS}/seed/{ref} {oid}", f"delete {ref}"]
         if moves:
             self.run("update-ref", "--stdin", input="\n".join(moves) + "\n")
+        # A .keep file leaves a pack out of every repack: the seed's packs stay shared.
+        for pack in (self.path / "objects" / "pack").glob("pack-*.pack"):
+            pack.with_suffix(".keep").write_text(f"patchtrail: hardlinked from {seed}\n")
+        self.no_auto_gc()
 
     @staticmethod
     def _plain(cmd: list[str]) -> None:

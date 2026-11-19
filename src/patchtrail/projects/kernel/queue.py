@@ -26,6 +26,7 @@ class StableQueue(Git):
         progress.step("stable-queue")
         self._cache.clear()
         if (self.path / ".git").is_dir():
+            self.no_auto_gc()
             self.run("fetch", "-q", "--depth", "1", "origin", "master", env=net_env())
             self.run("reset", "-q", "--hard", "FETCH_HEAD")
             return
@@ -34,6 +35,7 @@ class StableQueue(Git):
                            capture_output=True, text=True, env=net_env())
         if p.returncode:
             raise GitError(f"git clone {url}: {p.stderr.strip()}")
+        self.no_auto_gc()
         self.run("sparse-checkout", "set", "--no-cone", "/queue-*/")
 
     def patches(self, series: str) -> list[QueuedPatch]:

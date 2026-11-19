@@ -35,6 +35,7 @@ class GitTrail(Trail):
                                    capture_output=True, text=True)
                 if p.returncode:
                     raise GitError(f"git init: {p.stderr.strip()}")
+            self.repo.no_auto_gc()
             self.repo.run("fetch", "-q", "--no-tags", self.url,
                           f"+refs/heads/{self.branch}:{UPSTREAM}",
                           f"+refs/tags/{self.tags}:{TAGS}/{self.tags}", env=net_env())

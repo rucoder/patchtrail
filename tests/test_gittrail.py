@@ -77,3 +77,12 @@ def test_commit_subject_keeps_project_prefix(tmp_path, view):
              posted_at=epoch("2026-09-20"))
     c = run(trail(repo.as_uri()), v).fragment["commits"]
     assert [(x["where"], x["stage"]) for x in c] == [("upstream", "applied")]
+
+
+def test_repo_never_gcs_on_its_own(upfix, view):                  # final review I2
+    from patchtrail.projects.kernel.repo import Git
+
+    t = trail(upfix.url)
+    t.prepare([view(project="erofs-utils")], NullProgress())
+    get = lambda key: Git(t.repo.path).run("config", "--local", "--get", key, ok=(0, 1)).strip()  # noqa: E731
+    assert (get("gc.auto"), get("maintenance.auto")) == ("0", "false")
