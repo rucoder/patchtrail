@@ -130,13 +130,19 @@ def _import_fixes(conn, path: Path, now: int, report: ImportReport) -> None:
             continue
         name, sha = words[0], words[1]
         row = store.get_patch(conn, name)
+        if row is None and (m := _VERSION.match(name)):
+            row = store.get_patch(conn, m.group(1))
         if row is None:
-            pid = store.add_patch(conn, name, relation="following", project="kernel", now=now)
-        else:
-            pid = row["id"]
-        store.set_commit(conn, pid, sha, "", "manual")
-        if len(words) >= 4:
+            row = store.patch_by_id(conn, store.add_patch(
+                conn, name, relation="following", project="kernel", now=now))
+        pid, applied = row["id"], False
+        if not any(c["sha"][:12] == sha[:12] for c in store.commits(conn, pid)):
+            store.set_commit(conn, pid, sha, "", "manual")
+            applied = True
+        if len(words) >= 4 and not row["tree_url"]:
             store.set_field(conn, pid, "tree_url", words[2])
             store.set_field(conn, pid, "tree_branch", words[3])
             store.set_field(conn, pid, "tree_source", "manual")
-        report.fixes.append(name)
+            applied = True
+        if applied:
+            report.fixes.append(name)

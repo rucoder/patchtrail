@@ -102,3 +102,30 @@ def test_following_when_author_is_not_mine(conn, old):
     import_old(conn, frozenset({"other@example.org"}), now=1000,
                old_config=old.config, old_state=old.state)
     assert store.get_patch(conn, "iowq-cpuset")["relation"] == "following"
+
+
+def test_fixes_name_with_version_suffix_lands_on_merged_patch(conn, old):
+    fixes = old.config / "stable-watch" / "fixes"
+    fixes.write_text(f"kvm-bar-efault-v2 {'2' * 40} https://t.example/linux.git br-1\n")
+    import_old(conn, MINE, now=1000, old_config=old.config, old_state=old.state)
+    assert sorted(p["name"] for p in store.list_patches(conn)) == ["iowq-cpuset", "kvm-bar-efault"]
+    kvm = store.get_patch(conn, "kvm-bar-efault")
+    assert [c["sha"] for c in store.commits(conn, kvm["id"])] == ["2" * 40]
+    assert (kvm["tree_url"], kvm["tree_branch"]) == ("https://t.example/linux.git", "br-1")
+
+
+def test_reimport_keeps_later_edits(conn, old):
+    import_old(conn, MINE, now=1000, old_config=old.config, old_state=old.state)
+    io = store.get_patch(conn, "iowq-cpuset")
+    sha = store.commits(conn, io["id"])[0]["sha"]
+    store.set_commit(conn, io["id"], sha, "io_uring: cpuset", "search")
+    store.set_field(conn, io["id"], "tree_url", "https://other.example/linux.git")
+    store.set_field(conn, io["id"], "tree_branch", "other")
+    store.set_field(conn, io["id"], "tree_source", "auto")
+    r = import_old(conn, MINE, now=2000, old_config=old.config, old_state=old.state)
+    assert r.fixes == []
+    io = store.get_patch(conn, "iowq-cpuset")
+    c = store.commits(conn, io["id"])
+    assert [(x["subject"], x["source"]) for x in c] == [("io_uring: cpuset", "search")]
+    assert (io["tree_url"], io["tree_branch"], io["tree_source"]) == (
+        "https://other.example/linux.git", "other", "auto")
