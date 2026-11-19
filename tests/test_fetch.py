@@ -602,3 +602,50 @@ def test_replies_linked_by_references_stay_in_the_thread(conn, cfgp, headers):  
     mine = frozenset({"me@example.org"})
     view = build_view(conn, store.patch_by_id(conn, pid), mine)
     assert commits_from_mail(view.mails, mine) == [("fix io", "3" * 40)]
+
+
+class Hooked(FakeTrail):
+    """A trail that runs a hook (the user acting) while a patch is evaluated."""
+    def __init__(self, hook):
+        super().__init__()
+        self.hook = hook
+
+    def evaluate(self, patch, progress):
+        self.hook(patch)
+        return super().evaluate(patch, progress)
+
+
+def test_close_during_the_run_wins(conn, cfgp):                   # R27
+    pid = kernel_patch(conn)
+    src = FakeSource({"a@x": [make_mail("a@x")]})
+
+    def close(patch):
+        other = db_connect()
+        store.set_field(other, pid, "closed", "moved")
+        other.close()
+    from patchtrail import db as _db
+    db_connect = lambda: _db.connect(cfgp[0].db)  # noqa: E731
+    run_fetch(*cfgp, "cli", source=src, trails={"kernel": Hooked(close)}, search=nosearch)
+    assert snapshot.latest(conn, pid)[2]["closed"] == "moved"
+
+
+def test_rm_during_the_run_leaves_it_ok(conn, cfgp):              # R27
+    gone = kernel_patch(conn, "gone", "a@x")
+    kept = kernel_patch(conn, "kept", "k@x")
+    src = FakeSource({"a@x": [make_mail("a@x")], "k@x": [make_mail("k@x")]})
+    from patchtrail import db as _db
+
+    def rm(patch):
+        if patch.name == "gone":
+            other = _db.connect(cfgp[0].db)
+            other.execute("DELETE FROM patches WHERE id=?", (gone,))
+            other.commit()
+            other.close()
+    found = TrailResult(commits_found=[("b" * 40, "io: x", "applied-mail")], fragment=empty())
+    trail = Hooked(rm)
+    trail.result = found
+    rid = run_fetch(*cfgp, "cli", source=src, trails={"kernel": trail}, search=nosearch)
+    assert last_run(conn)["status"] == "ok" and last_run(conn)["id"] == rid
+    assert store.get_patch(conn, "gone") is None
+    assert snapshot.latest(conn, kept) is not None
+    assert any(l.startswith("gone:") for l in log_lines(conn, rid))

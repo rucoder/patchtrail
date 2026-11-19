@@ -141,3 +141,21 @@ def test_upsert_mails_stores_the_parent_the_thread_has(conn):
         make_mail("q@x", in_reply_to="r@x", extra_headers={"References": "<a@x>"}),
         make_mail("n@x", extra_headers={"References": "<gone@x>"})], 2)
     assert [parent(i) for i in ("a@x", "r@x", "q@x", "n@x")] == [None, "a@x", "r@x", None]
+
+
+def test_atomic_commits_at_the_end_and_rolls_back_on_error(tmp_path):
+    p = paths()
+    a = db.connect(p.db)
+    b = db.connect(p.db)                       # a second connection sees only what is committed
+    with pytest.raises(RuntimeError):
+        with store.atomic(a):
+            store.add_patch(a, "x", now=1)
+            raise RuntimeError
+    assert store.get_patch(a, "x") is None
+    with store.atomic(a):
+        store.add_patch(a, "y", now=1)
+        with store.atomic(a):                  # nests
+            store.add_patch(a, "z", now=1)
+        assert store.get_patch(b, "y") is None and store.get_patch(b, "z") is None
+    assert store.get_patch(b, "y") and store.get_patch(b, "z")
+    a.close(); b.close()

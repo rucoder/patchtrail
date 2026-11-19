@@ -298,24 +298,38 @@ class _Run:
         self.progress.phase("evaluate", len(rows))
         for row in rows:
             self.progress.step(row["name"])
-            view, standing_mails = loaded[row["id"]]
-            failed = row["project"] not in ready
-            if failed:
-                fragment = _previous(view)
-            elif ready[row["project"]] is None:
-                fragment = _empty()
-            else:
-                fragment, failed = self._follow(row, view, ready[row["project"]])
-            if (view.prev_state is None and row["read_on_first_snapshot"]
-                    and (failed or row["id"] in self.unfetched)):
-                # A first snapshot from half a run would use up read_on_first_snapshot,
-                # and the patch would flag once the rest arrives. Other patches are
-                # unread until read anyway, so they record what there is.
-                self.progress.log(f"{row['name']}: first snapshot waits for a complete fetch")
-                continue
-            state = _compose(row, view, standing_mails, self.mine, fragment)
-            record(self.conn, row["id"], state, int(self.now()))
-            self.conn.commit()
+            try:
+                self._evaluate_one(row, loaded, ready)
+            except Exception as e:      # e.g. the patch was removed while the run went on
+                self.conn.rollback()
+                self.progress.log(f"{row['name']}: cannot record its state: {_why(e)}")
+
+    def _evaluate_one(self, row, loaded, ready) -> None:
+        view, standing_mails = loaded[row["id"]]
+        failed = row["project"] not in ready
+        if failed:
+            fragment = _previous(view)
+        elif ready[row["project"]] is None:
+            fragment = _empty()
+        else:
+            fragment, failed = self._follow(row, view, ready[row["project"]])
+        # What the user changed during the run (close, mark-applied, hide, ...) wins:
+        # read the row again, and drop a patch that was removed.
+        fresh = store.patch_by_id(self.conn, row["id"])
+        if fresh is None:
+            self.progress.log(f"{row['name']}: removed during the run")
+            return
+        row = fresh
+        if (view.prev_state is None and row["read_on_first_snapshot"]
+                and (failed or row["id"] in self.unfetched)):
+            # A first snapshot from half a run would use up read_on_first_snapshot,
+            # and the patch would flag once the rest arrives. Other patches are
+            # unread until read anyway, so they record what there is.
+            self.progress.log(f"{row['name']}: first snapshot waits for a complete fetch")
+            return
+        state = _compose(row, view, standing_mails, self.mine, fragment)
+        record(self.conn, row["id"], state, int(self.now()))
+        self.conn.commit()
 
     def _follow(self, row, view: PatchView, trail: Trail) -> tuple[dict, bool]:
         """The trail's fragment for the patch, and whether the trail failed."""
@@ -384,7 +398,7 @@ def reevaluate(conn, paths: Paths, cfg: Config, patch_id: int) -> int | None:
         return None
     state = compose_for(conn, row, my_addresses(cfg), _previous(view))
     snap = record(conn, patch_id, state, int(time.time()))
-    conn.commit()
+    store.commit(conn)
     return snap
 
 

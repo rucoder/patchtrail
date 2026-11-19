@@ -166,11 +166,7 @@ def merge_by_change_id(conn) -> list[str]:
             p = store.patch_by_id(conn, other)
             if p is None:
                 continue
-            conn.execute("UPDATE revisions SET patch_id=? WHERE patch_id=?",
-                         (row["keep"], other))
-            conn.execute("UPDATE OR IGNORE commits SET patch_id=? WHERE patch_id=?",
-                         (row["keep"], other))
-            conn.execute("DELETE FROM patches WHERE id=?", (other,))
+            store.merge_into(conn, row["keep"], other)
             merged.append(p["name"])
-    conn.commit()
+    store.commit(conn)
     return merged

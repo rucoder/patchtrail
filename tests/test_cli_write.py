@@ -195,7 +195,8 @@ def test_add_for_agents_json_idempotent_links(populated, conn, monkeypatch, caps
     assert store.get_patch(conn, "other-name") is None
 
 
-def test_add_json_reports_snapshot_state(populated, capsys):
+def test_add_json_reports_snapshot_state(populated, monkeypatch, capsys):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
     assert main(["add", "x", "iowq@x", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert (out["name"], out["stage"], out["standing"]) == (
@@ -388,3 +389,63 @@ def test_watch_prints_new_changes_until_interrupted(populated, conn, monkeypatch
     assert main(["watch"]) == 0
     assert calls == [30, 30]
     assert capsys.readouterr().out.splitlines() == ["erofs", "  stage: submitted → accepted"]
+
+
+def test_add_folded_into_older_patch_by_change_id(populated, conn, monkeypatch, capsys):
+    """The targeted fetch merges the new patch into the older one: report that one,
+    keep the agent's link and note."""
+    old = store.get_patch(conn, "erofs")["id"]
+    store.add_links(conn, old, ["https://x.example/old"], 1)
+    store.set_field(conn, old, "note", "old note")
+
+    def fetch(paths, cfg, trigger, *, patch_names, **k):
+        new = store.get_patch(conn, patch_names[0])
+        store.merge_into(conn, old, new["id"])
+        conn.commit()
+        return 1
+    monkeypatch.setattr("patchtrail.cli.run_fetch", fetch)
+    zed = "https://zededa.atlassian.net/browse/ZED-42"
+    assert main(["add", "erofs-v2", "v2@x", "--link", zed, "--note", "agent note", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert (out["name"], out["msgid"], out["links"], out["note"]) == (
+        "erofs", "v2@x", ["https://x.example/old", zed], "old note")   # the survivor keeps its note
+    assert store.get_patch(conn, "erofs-v2") is None
+
+
+def test_merge_keeps_links_and_the_survivors_note(populated, conn):
+    a, b = (store.get_patch(conn, n)["id"] for n in ("iowq-cpuset", "erofs"))
+    store.add_links(conn, b, ["https://x.example/b"], 1)
+    store.set_field(conn, b, "note", "b note")
+    assert main(["merge", "iowq-cpuset", "erofs"]) == 0
+    assert store.links(conn, a) == ["https://x.example/b"]
+    assert store.get_patch(conn, "iowq-cpuset")["note"] == "b note"     # survivor had none
+    c = store.add_patch(conn, "c", now=1); d = store.add_patch(conn, "d", now=1)
+    store.set_field(conn, c, "note", "c note"); store.set_field(conn, d, "note", "d note")
+    assert main(["merge", "c", "d"]) == 0
+    assert store.get_patch(conn, "c")["note"] == "c note"
+
+
+def test_add_is_one_transaction(populated, conn, monkeypatch, capsys):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
+    real = store.add_revision
+
+    def boom(*a, **k):
+        raise sqlite3.OperationalError("disk full")
+    monkeypatch.setattr(store, "add_revision", boom)
+    with pytest.raises(sqlite3.OperationalError):
+        main(["add", "x-thread", "abc@d", "--link", "https://x.example/1"])
+    assert store.get_patch(conn, "x-thread") is None
+    monkeypatch.setattr(store, "add_revision", real)
+    assert main(["add", "x-thread", "abc@d", "--link", "https://x.example/1"]) == 0
+    p = store.get_patch(conn, "x-thread")
+    assert [r["root_msgid"] for r in store.revisions(conn, p["id"])] == ["abc@d"]
+
+
+def test_close_is_one_transaction(populated, conn, monkeypatch):
+    def boom(*a, **k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr("patchtrail.cli.reevaluate", boom)
+    with pytest.raises(RuntimeError):
+        main(["close", "erofs", "dropped", "--note", "n"])
+    p = store.get_patch(conn, "erofs")
+    assert (p["closed"], p["closed_note"]) == (None, None)

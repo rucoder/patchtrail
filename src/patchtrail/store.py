@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Plain-SQL access to the patchtrail database. Every function takes conn first."""
 
+import contextlib
 import re
 import sqlite3
 
@@ -11,6 +12,36 @@ _FIELDS = frozenset(
     "manual_applied force_stable tree_url tree_branch tree_source "
     "read_snapshot_id prev_read_snapshot_id flagged read_on_first_snapshot note".split()
 )
+
+
+_atomic_depth: dict[int, int] = {}      # id(conn) -> nesting depth of atomic()
+
+
+def commit(conn) -> None:
+    """Commit, unless an atomic() block holds the changes back until it ends."""
+    if not _atomic_depth.get(id(conn)):
+        conn.commit()
+
+
+@contextlib.contextmanager
+def atomic(conn):
+    """Everything done on conn inside the block is committed together at its end, or
+    rolled back if it raises. Store functions do not commit inside it. Blocks nest."""
+    key = id(conn)
+    _atomic_depth[key] = _atomic_depth.get(key, 0) + 1
+    outer = _atomic_depth[key] == 1
+    try:
+        yield conn
+    except BaseException:
+        if outer:
+            conn.rollback()
+        raise
+    finally:
+        _atomic_depth[key] -= 1
+        if outer:
+            del _atomic_depth[key]
+    if outer:
+        conn.commit()
 
 
 def valid_name(name: str) -> bool:
@@ -29,7 +60,7 @@ def add_patch(conn, name, *, relation="mine", project="unknown", now) -> int:
         if "patches.name" in str(e):
             raise ValueError(f"patch name already taken: {name}") from e
         raise
-    conn.commit()
+    commit(conn)
     return cur.lastrowid
 
 
@@ -60,7 +91,7 @@ def add_revision(conn, patch_id, root_msgid, *, version=1, subject="", author=No
         " posted_at, kind, branch) VALUES (?,?,?,?,?,?,?,?)",
         (patch_id, root_msgid, version, subject, author, posted_at, kind, branch),
     )
-    conn.commit()
+    commit(conn)
     return cur.lastrowid
 
 
@@ -74,7 +105,7 @@ def set_revision(conn, revision_id, **fields):
     if fields:
         sets = ", ".join(f"{k}=?" for k in fields)
         conn.execute(f"UPDATE revisions SET {sets} WHERE id=?", (*fields.values(), revision_id))
-        conn.commit()
+        commit(conn)
 
 
 def revisions_sharing_change_id(conn):
@@ -104,7 +135,7 @@ def set_commit(conn, patch_id, sha, subject, source):
         " subject=excluded.subject, source=excluded.source",
         (patch_id, sha, subject, source),
     )
-    conn.commit()
+    commit(conn)
 
 
 def commits(conn, patch_id):
@@ -131,7 +162,7 @@ def replace_commit(conn, patch_id, old_sha, new_sha, subject, source="search"):
     else:
         conn.execute("UPDATE commits SET sha=?, subject=?, source=? WHERE id=?",
                      (new_sha, subject, source, old[0]["id"]))
-    conn.commit()
+    commit(conn)
 
 
 def skips(conn, patch_id) -> frozenset[str]:
@@ -144,7 +175,7 @@ def set_field(conn, patch_id, column, value):
     if column not in _FIELDS:
         raise ValueError(f"cannot set column {column!r}")
     conn.execute(f"UPDATE patches SET {column}=? WHERE id=?", (value, patch_id))
-    conn.commit()
+    commit(conn)
 
 
 def add_links(conn, patch_id, urls, now) -> list[str]:
@@ -155,19 +186,36 @@ def add_links(conn, patch_id, urls, now) -> list[str]:
                            (patch_id, url, now))
         if cur.rowcount:
             new.append(url)
-    conn.commit()
+    commit(conn)
     return new
 
 
 def remove_links(conn, patch_id, urls):
     conn.executemany("DELETE FROM links WHERE patch_id=? AND url=?",
                      [(patch_id, u) for u in urls])
-    conn.commit()
+    commit(conn)
 
 
 def links(conn, patch_id) -> list[str]:
     return [r[0] for r in conn.execute(
         "SELECT url FROM links WHERE patch_id=? ORDER BY added_at, rowid", (patch_id,))]
+
+
+def merge_into(conn, keep_id, other_id) -> None:
+    """Move the second patch's revisions (and their mails), commits, skips and links
+    into the first and delete it. The first keeps its note, else takes the other's.
+    The caller commits."""
+    conn.execute("UPDATE revisions SET patch_id=? WHERE patch_id=?", (keep_id, other_id))
+    conn.execute("INSERT OR IGNORE INTO commits (patch_id, sha, subject, source)"
+                 " SELECT ?, sha, subject, source FROM commits WHERE patch_id=?",
+                 (keep_id, other_id))
+    conn.execute("INSERT OR IGNORE INTO branch_skips (patch_id, series)"
+                 " SELECT ?, series FROM branch_skips WHERE patch_id=?", (keep_id, other_id))
+    conn.execute("INSERT OR IGNORE INTO links (patch_id, url, added_at)"
+                 " SELECT ?, url, added_at FROM links WHERE patch_id=?", (keep_id, other_id))
+    conn.execute("UPDATE patches SET note=(SELECT note FROM patches WHERE id=?)"
+                 " WHERE id=? AND (note IS NULL OR note='')", (other_id, keep_id))
+    conn.execute("DELETE FROM patches WHERE id=?", (other_id,))
 
 
 def kv_get(conn, key):
@@ -181,7 +229,7 @@ def kv_set(conn, key, value):
         " ON CONFLICT (key) DO UPDATE SET value=excluded.value",
         (key, value),
     )
-    conn.commit()
+    commit(conn)
 
 
 def _parent(m, known) -> str | None:
@@ -222,7 +270,7 @@ def upsert_mails(conn, revision_id, raws, now) -> list[str]:
         elif parent is not None and known(parent):
             conn.execute("UPDATE mails SET in_reply_to=? WHERE msgid=? AND in_reply_to IS NOT ?",
                          (parent, m.msgid, parent))
-    conn.commit()
+    commit(conn)
     return new
 
 

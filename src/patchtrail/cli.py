@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Command line entry point."""
 import argparse
+import functools
 import json
 import os
 import re
@@ -165,6 +166,16 @@ def _series(arg: str) -> str:
     return m.group(1)
 
 
+def _atomic(cmd):
+    """Run the command's changes as one transaction."""
+    @functools.wraps(cmd)
+    def run(args, conn, cfg, mine):
+        with store.atomic(conn):
+            return cmd(args, conn, cfg, mine)
+    return run
+
+
+@_atomic
 def cmd_read(args, conn, cfg, mine) -> int:
     if args.all:
         rows = store.list_patches(conn, closed=True)
@@ -174,14 +185,15 @@ def cmd_read(args, conn, cfg, mine) -> int:
         raise CliError("name a patch or pass --all")
     for r in rows:
         snapshot.mark_read(conn, r["id"])
-    conn.commit()
+    store.commit(conn)
     return 0
 
 
+@_atomic
 def cmd_unread(args, conn, cfg, mine) -> int:
     for r in _patches(conn, args.names):
         snapshot.mark_unread(conn, r["id"])
-    conn.commit()
+    store.commit(conn)
     return 0
 
 
@@ -244,17 +256,15 @@ def cmd_watch(args, conn, cfg, mine) -> int:
         return 0
 
 
-def _add_report(conn, row, mine, as_json: bool) -> None:
+def _add_report(conn, row, msgid: str, mine, as_json: bool) -> None:
     latest = snapshot.latest(conn, row["id"])
     if as_json:
-        revs = store.revisions(conn, row["id"])
-        msgid = revs[-1]["root_msgid"] if revs else None
         print(json.dumps({
             "name": row["name"], "msgid": msgid, "project": row["project"],
             "stage": latest[2]["stage"] if latest else None,
             "standing": latest[2]["standing"]["text"] if latest else None,
             "links": store.links(conn, row["id"]), "note": row["note"],
-            "url": f"{render.LORE}/{msgid}/" if msgid else None}))
+            "url": f"{render.LORE}/{msgid}/"}))
     else:
         _print(render.summary_lines(conn, row, mine=mine,
                                     state=render.current_state(conn, row, mine)))
@@ -267,22 +277,22 @@ def cmd_add(args, conn, cfg, mine) -> int:
     if not msgid:
         raise CliError("no Message-ID")
     now = int(time.time())
-    rev = store.revision_by_msgid(conn, msgid)
-    if rev is not None:                     # registered before: the first name stays
-        row = store.patch_by_id(conn, rev["patch_id"])
-    else:
-        if store.get_patch(conn, args.name) is not None:
-            raise CliError(f"name taken: {args.name}")
-        row = store.patch_by_id(conn, store.add_patch(
-            conn, args.name, relation="following" if args.follow else "mine", now=now))
-        if not args.follow:
-            store.set_field(conn, row["id"], "read_on_first_snapshot", 1)
-        store.add_revision(conn, row["id"], msgid, subject="")
-        conn.execute("DELETE FROM ignored WHERE msgid=?", (msgid,))
-        conn.commit()
-    store.add_links(conn, row["id"], args.link, now)
-    if args.note is not None:
-        store.set_field(conn, row["id"], "note", args.note or None)
+    with store.atomic(conn):
+        rev = store.revision_by_msgid(conn, msgid)
+        if rev is not None:                 # registered before: the first name stays
+            row = store.patch_by_id(conn, rev["patch_id"])
+        else:
+            if store.get_patch(conn, args.name) is not None:
+                raise CliError(f"name taken: {args.name}")
+            row = store.patch_by_id(conn, store.add_patch(
+                conn, args.name, relation="following" if args.follow else "mine", now=now))
+            if not args.follow:
+                store.set_field(conn, row["id"], "read_on_first_snapshot", 1)
+            store.add_revision(conn, row["id"], msgid, subject="")
+            conn.execute("DELETE FROM ignored WHERE msgid=?", (msgid,))
+        store.add_links(conn, row["id"], args.link, now)
+        if args.note is not None:
+            store.set_field(conn, row["id"], "note", args.note or None)
     try:
         run_fetch(paths(), cfg, "cli", patch_names=[row["name"]], discover_new=False)
     except Busy:
@@ -291,26 +301,32 @@ def cmd_add(args, conn, cfg, mine) -> int:
             return 0
     except Exception as e:      # lore is reached run by run; the patch is registered
         print(f"ptl: fetch failed: {e}; it is fetched on the next run", file=sys.stderr)
-    row = store.patch_by_id(conn, row["id"])
-    _add_report(conn, row, mine, args.json)
+    # The fetch may have folded the patch into an older one (same change-id).
+    owner = store.revision_by_msgid(conn, msgid)
+    row = store.patch_by_id(conn, owner["patch_id"] if owner else row["id"])
+    _add_report(conn, row, msgid, mine, args.json)
     return 0
 
 
 def cmd_link(args, conn, cfg, mine) -> int:
-    store.add_links(conn, _one(conn, args.name)["id"], args.urls, int(time.time()))
+    with store.atomic(conn):
+        store.add_links(conn, _one(conn, args.name)["id"], args.urls, int(time.time()))
     return 0
 
 
 def cmd_unlink(args, conn, cfg, mine) -> int:
-    store.remove_links(conn, _one(conn, args.name)["id"], args.urls)
+    with store.atomic(conn):
+        store.remove_links(conn, _one(conn, args.name)["id"], args.urls)
     return 0
 
 
 def cmd_note(args, conn, cfg, mine) -> int:
-    store.set_field(conn, _one(conn, args.name)["id"], "note", args.text or None)
+    with store.atomic(conn):
+        store.set_field(conn, _one(conn, args.name)["id"], "note", args.text or None)
     return 0
 
 
+@_atomic
 def cmd_follow(args, conn, cfg, mine) -> int:
     rest = args.rest
     if len(rest) > 3:
@@ -341,6 +357,7 @@ def cmd_follow(args, conn, cfg, mine) -> int:
     return 0
 
 
+@_atomic
 def cmd_hide(args, conn, cfg, mine) -> int:
     rows = _patches(conn, args.names)
     for r in rows:
@@ -349,6 +366,7 @@ def cmd_hide(args, conn, cfg, mine) -> int:
     return 0
 
 
+@_atomic
 def cmd_unhide(args, conn, cfg, mine) -> int:
     for r in _patches(conn, args.names):
         store.set_field(conn, r["id"], "hidden", 0)
@@ -376,14 +394,16 @@ def _remove(conn, row) -> None:
     conn.execute("DELETE FROM patches WHERE id=?", (row["id"],))
 
 
+@_atomic
 def cmd_rm(args, conn, cfg, mine) -> int:
     rows = _patches(conn, args.names)
     for r in rows:
         _remove(conn, r)
-    conn.commit()
+    store.commit(conn)
     return 0
 
 
+@_atomic
 def cmd_rename(args, conn, cfg, mine) -> int:
     row = _one(conn, args.old)
     if not store.valid_name(args.new):
@@ -394,25 +414,17 @@ def cmd_rename(args, conn, cfg, mine) -> int:
     return 0
 
 
+@_atomic
 def cmd_merge(args, conn, cfg, mine) -> int:
     a, b = _one(conn, args.name), _one(conn, args.other)
     if a["id"] == b["id"]:
         raise CliError("cannot merge a patch into itself")
-    # Mails hang on the revisions, so they move with them.
-    conn.execute("UPDATE revisions SET patch_id=? WHERE patch_id=?", (a["id"], b["id"]))
-    conn.execute("INSERT OR IGNORE INTO commits (patch_id, sha, subject, source)"
-                 " SELECT ?, sha, subject, source FROM commits WHERE patch_id=?",
-                 (a["id"], b["id"]))
-    conn.execute("INSERT OR IGNORE INTO branch_skips (patch_id, series)"
-                 " SELECT ?, series FROM branch_skips WHERE patch_id=?", (a["id"], b["id"]))
-    conn.execute("INSERT OR IGNORE INTO links (patch_id, url, added_at)"
-                 " SELECT ?, url, added_at FROM links WHERE patch_id=?", (a["id"], b["id"]))
-    conn.execute("DELETE FROM patches WHERE id=?", (b["id"],))
-    conn.commit()
+    store.merge_into(conn, a["id"], b["id"])
     _reeval(conn, cfg, a)
     return 0
 
 
+@_atomic
 def cmd_split(args, conn, cfg, mine) -> int:
     row = _one(conn, args.name)
     revs = store.revisions(conn, row["id"])
@@ -433,10 +445,11 @@ def cmd_split(args, conn, cfg, mine) -> int:
                        (new, row["relation"], row["project"], row["project_override"],
                         int(time.time())))
     conn.execute("UPDATE revisions SET patch_id=? WHERE id=?", (cur.lastrowid, hit[0]["id"]))
-    conn.commit()
+    store.commit(conn)
     return 0
 
 
+@_atomic
 def cmd_close(args, conn, cfg, mine) -> int:
     row = _one(conn, args.name)
     store.set_field(conn, row["id"], "closed", args.reason)
@@ -445,23 +458,26 @@ def cmd_close(args, conn, cfg, mine) -> int:
     return 0
 
 
+@_atomic
 def cmd_skip(args, conn, cfg, mine) -> int:
     row, series = _one(conn, args.name), _series(args.series)
     conn.execute("INSERT OR IGNORE INTO branch_skips (patch_id, series) VALUES (?,?)",
                  (row["id"], series))
-    conn.commit()
+    store.commit(conn)
     _reeval(conn, cfg, row)
     return 0
 
 
+@_atomic
 def cmd_unskip(args, conn, cfg, mine) -> int:
     row, series = _one(conn, args.name), _series(args.series)
     conn.execute("DELETE FROM branch_skips WHERE patch_id=? AND series=?", (row["id"], series))
-    conn.commit()
+    store.commit(conn)
     _reeval(conn, cfg, row)
     return 0
 
 
+@_atomic
 def cmd_mark_applied(args, conn, cfg, mine) -> int:
     row = _one(conn, args.name)
     store.set_field(conn, row["id"], "manual_applied", 1)

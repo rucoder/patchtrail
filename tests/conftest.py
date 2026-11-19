@@ -17,6 +17,10 @@ def hermetic(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_STATE_HOME", str(home / ".local" / "state"))
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
     monkeypatch.delenv("PATCHTRAIL_FROM", raising=False)
+    b4 = tmp_path / "no-b4"
+    b4.write_text("#!/bin/sh\necho 'b4 called in tests' >&2\nexit 99\n")
+    b4.chmod(0o755)
+    monkeypatch.setenv("PATCHTRAIL_B4", str(b4))
 
     def no_network(*args, **kwargs):
         raise AssertionError("network in tests")

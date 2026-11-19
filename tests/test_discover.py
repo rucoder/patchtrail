@@ -137,3 +137,17 @@ def test_untracked_nonreply_backport_creates_no_patch(conn):
                                      "[PATCH liburing] x"])
 def test_ordinary_subjects_are_not_backports(subject):
     assert backport_of(subject, "")[0] is None
+
+
+def test_merge_by_change_id_keeps_links_and_note(conn):
+    a = store.add_patch(conn, "old", now=1)
+    b = store.add_patch(conn, "new", now=2)
+    store.add_revision(conn, a, "a@x", subject="s")
+    store.add_revision(conn, b, "b@x", version=2, subject="s")
+    conn.execute("UPDATE revisions SET change_id='I1'")
+    store.add_links(conn, a, ["https://u/1"], 1)
+    store.add_links(conn, b, ["https://u/1", "https://u/2"], 2)
+    store.set_field(conn, b, "note", "from new")
+    assert merge_by_change_id(conn) == ["new"]
+    assert store.links(conn, a) == ["https://u/1", "https://u/2"]
+    assert store.patch_by_id(conn, a)["note"] == "from new"
