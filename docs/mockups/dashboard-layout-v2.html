@@ -1,0 +1,216 @@
+<style>
+.pt { font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--text-primary); text-align: left; }
+.pt .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.pt .muted { color: var(--text-secondary); }
+.pt .chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.pt .k { background: rgba(224,138,0,.16); color: #d08000; }
+.pt .q { background: rgba(229,72,77,.15); color: #e5484d; }
+.pt .g { background: rgba(142,78,198,.16); color: #9d5bd2; }
+.pt .e { background: rgba(18,165,148,.16); color: #12a594; }
+.pt .l { background: rgba(62,99,221,.16); color: #4c6fe8; }
+.pt .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.pt .nodot { width: 8px; height: 8px; display: inline-block; }
+.pt .stages { display: inline-flex; gap: 3px; vertical-align: middle; }
+.pt .st { width: 16px; height: 6px; border-radius: 3px; background: var(--bg-tertiary); }
+.pt .st.d { background: var(--success); }
+.pt .st.c { background: var(--accent); }
+.pt .st.x { background: transparent; border: 1px dashed var(--border); height: 4px; }
+.pt .turn { color: var(--error); font-weight: 600; }
+.pt .bar { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-primary); flex-wrap: wrap; }
+.pt .bar .sp { flex: 1; }
+.pt .btn { border: 1px solid var(--border); background: var(--bg-secondary); border-radius: 6px; padding: 1px 8px; font-size: 12px; color: var(--text-primary); white-space: nowrap; }
+.pt .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pt h4 { margin: 12px 12px 4px; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); }
+.pt .row { display: grid; grid-template-columns: 10px 78px 1fr 92px 170px; gap: 10px; align-items: center; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.pt .row b { font-weight: 600; }
+.pt .diff { margin: 0 12px 8px 30px; padding: 8px 12px; background: var(--bg-primary); border-left: 3px solid var(--accent); border-radius: 4px; }
+.pt .diff div { margin: 2px 0; }
+.pt .old { color: var(--text-secondary); }
+.pt .new { font-weight: 600; }
+.pt .ok { color: var(--success); font-weight: 600; }
+.pt .bad { color: var(--error); font-weight: 600; }
+.pt .warn { color: var(--warning); font-weight: 600; }
+/* board */
+.pt .board { display: grid; grid-template-columns: repeat(6, minmax(120px, 1fr)); gap: 8px; padding: 10px; overflow-x: auto; }
+.pt .col { background: var(--bg-primary); border-radius: 8px; padding: 6px; min-height: 260px; }
+.pt .col > .h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); padding: 2px 4px 6px; }
+.pt .crd { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 6px 7px; margin-bottom: 6px; font-size: 12px; }
+.pt .crd.u { border-left: 3px solid var(--accent); }
+.pt .crd .t { font-weight: 600; margin: 2px 0; word-break: break-word; }
+.pt .badge { display: inline-block; background: var(--accent); color: #fff; border-radius: 8px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+/* two-pane */
+.pt .panes { display: grid; grid-template-columns: 270px 1fr; min-height: 420px; }
+.pt .list { border-right: 1px solid var(--border); background: var(--bg-primary); }
+.pt .li { padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.pt .li.sel { background: var(--selected-bg); border-left: 3px solid var(--accent); }
+.pt .li .n { font-weight: 600; }
+.pt .detail { padding: 12px 16px; }
+.pt .trail { display: flex; align-items: flex-start; margin: 10px 0 14px; }
+.pt .step { flex: 1; text-align: center; position: relative; font-size: 11px; }
+.pt .step:before { content: ""; position: absolute; top: 7px; left: -50%; width: 100%; height: 2px; background: var(--bg-tertiary); z-index: 0; }
+.pt .step:first-child:before { display: none; }
+.pt .step.d:before, .pt .step.c:before { background: var(--success); }
+.pt .step .o { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-tertiary); margin: 0 auto 3px; position: relative; z-index: 1; border: 2px solid var(--bg-secondary); }
+.pt .step.d .o { background: var(--success); }
+.pt .step.c .o { background: var(--accent); }
+.pt table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.pt td, .pt th { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.pt th { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+.pt .box { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; margin: 8px 0 12px; background: var(--selected-bg); }
+.opt-wrap { margin-bottom: 28px; }
+.opt-wrap .option { display: block; padding: 0; overflow: hidden; }
+.opt-head { display: flex; gap: 10px; align-items: baseline; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.opt-head .letter { flex: none; }
+</style>
+
+<h2>Dashboard: which layout feels right?</h2>
+<p class="subtitle">Your real patches. The unread changes are sample data. Click the one closest to what you want; if you'd mix two, say so in the terminal.</p>
+
+<!-- ============================ A: inbox ============================ -->
+<div class="opt-wrap">
+<div class="option" data-choice="a" onclick="toggleSelect(this)">
+<div class="opt-head"><div class="letter">A</div><div><h3 style="margin:0">Inbox</h3><p style="margin:2px 0 0">One list. Unread patches on top, each showing what changed since you last marked it read. Everything else below, one line each.</p></div></div>
+<div class="pt">
+  <div class="bar">
+    <b>patchtrail</b>
+    <span class="btn on">All projects</span><span class="btn">kernel</span><span class="btn">QEMU</span><span class="btn">GRUB</span><span class="btn">erofs-utils</span><span class="btn">liburing</span>
+    <span class="sp"></span>
+    <span class="muted">fetched 10:12 · next 13:12</span><span class="btn">Fetch now</span>
+  </div>
+
+  <h4>Unread · 3</h4>
+  <div class="row"><span class="dot"></span><span class="chip k">kernel</span><span><b>iowq-cpuset</b> &nbsp;io_uring/io-wq: apply the current cpuset to new workers</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st"></i></span><span style="text-align:right"><span class="btn">Mark read</span> <span class="btn">Hide</span></span></div>
+  <div class="diff">
+    <div class="muted">since you read it on Nov 12</div>
+    <div>stage &nbsp;<span class="old">submitted</span> → <span class="new">accepted</span> · Applied by Jens Axboe to io_uring-7.4, Nov 18 · <span class="mono">0659e44ce739</span></div>
+    <div>mail &nbsp;+3 · Jens Axboe: “Applied, thanks!”</div>
+    <div>stable &nbsp;<span class="ok">7.3 6.18 6.12</span> apply · <span class="warn">6.6</span> after 2 queued · <span class="bad">6.1 conflict</span> · 5.15 5.10 not affected</div>
+  </div>
+
+  <div class="row"><span class="dot"></span><span class="chip q">QEMU</span><span><b>vfio-igd-sanitize-dbuf-ctl-power</b> &nbsp;[PATCH v2] vfio/igd: sanitize DBUF_CTL POWER_STATE…</span><span class="stages"><i class="st d"></i><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i></span><span style="text-align:right"><span class="btn">Mark read</span> <span class="btn">Hide</span></span></div>
+  <div class="diff">
+    <div class="muted">since you read it on Jul 18</div>
+    <div>stage &nbsp;<span class="old">submitted</span> → <span class="new">reviewed</span> · Reviewed-by Tomita Moeko</div>
+    <div>mail &nbsp;+4 · waiting for the maintainer since Jul 24</div>
+  </div>
+
+  <div class="row"><span class="dot"></span><span class="chip g">GRUB</span><span><b>tpm-include-efi-status-code-in</b> &nbsp;tpm: include EFI status code in “unknown TPM error”…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st x"></i><i class="st x"></i><i class="st x"></i></span><span style="text-align:right"><span class="btn">Mark read</span> <span class="btn">Hide</span></span></div>
+  <div class="diff">
+    <div class="muted">since you read it on Mar 27</div>
+    <div>mail &nbsp;+1 · Leo Sandoval replied: <span class="turn">your turn</span></div>
+  </div>
+
+  <h4>Everything else · 8</h4>
+  <div class="row"><span class="nodot"></span><span class="chip k">kernel</span><span><b>kvm-bar-efault</b> &nbsp;v2 · KVM: x86/mmu: Fill memory_fault for unresolvable…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st d"></i><i class="st d"></i><i class="st d"></i><i class="st"></i></span><span class="muted">released · v7.4-rc1</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip l">liburing</span><span><b>iowq-cpuset-liburing</b> &nbsp;test/iowq-cpuset: check that io-wq workers…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st x"></i><i class="st x"></i><i class="st x"></i></span><span class="muted">no reply · since Nov 11</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip e">erofs-utils</span><span><b>erofs</b> &nbsp;v2 · lib: follow symlinks on intermediate tar path…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st x"></i><i class="st x"></i><i class="st x"></i></span><span class="muted">no reply · since Sep 20</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip q">QEMU</span><span><b>hw-vfio-recover-from-disabled</b> &nbsp;RFC · recover from disabled-BAR mmap SIGBUS…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i></span><span class="muted">no reply · since Jul 16</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip k">kernel</span><span><b>kbuild-use-objtree-for-module</b> &nbsp;kbuild: Use objtree for module signing key path</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st d"></i><i class="st d"></i><i class="st d"></i><i class="st"></i></span><span class="muted">released · v6.19-rc1</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip k">kernel</span><span><b>net-stmmac-do-not-enable-disable</b> &nbsp;net: stmmac: Do not enable/disable runtime PM…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i></span><span class="turn">your turn · 2024</span></div>
+  <div class="row"><span class="nodot"></span><span class="chip k">kernel</span><span><b>reenable-runtime-pm-for</b> &nbsp;vfio/pci: Reenable runtime PM for dynamically…</span><span class="stages"><i class="st d"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i><i class="st"></i></span><span class="muted">no reply · since 2024</span></div>
+  <div class="row muted" style="border-bottom:0"><span></span><span></span><span>1 hidden · show</span><span></span><span></span></div>
+</div>
+</div>
+</div>
+
+<!-- ============================ B: board ============================ -->
+<div class="opt-wrap">
+<div class="option" data-choice="b" onclick="toggleSelect(this)">
+<div class="opt-head"><div class="letter">B</div><div><h3 style="margin:0">Board</h3><p style="margin:2px 0 0">A column per stage, so patches move left to right. A blue edge marks unread; clicking a card opens what changed in a side panel.</p></div></div>
+<div class="pt">
+  <div class="bar">
+    <b>patchtrail</b>
+    <span class="btn on">All projects</span><span class="btn">kernel</span><span class="btn">QEMU</span><span class="btn">GRUB</span><span class="btn">…</span>
+    <span class="btn">Unread only</span>
+    <span class="sp"></span>
+    <span class="muted">fetched 10:12 · next 13:12</span><span class="btn">Fetch now</span>
+  </div>
+  <div class="board">
+    <div class="col"><div class="h">Submitted · 6</div>
+      <div class="crd u"><span class="chip g">GRUB</span> <span class="badge">1</span><div class="t">tpm-include-efi-status-code-in</div><span class="turn">your turn</span></div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">net-stmmac-do-not-enable-disable</div><span class="turn">your turn</span> <span class="muted">· 2024</span></div>
+      <div class="crd"><span class="chip l">liburing</span><div class="t">iowq-cpuset-liburing</div><span class="muted">no reply · Nov 11</span></div>
+      <div class="crd"><span class="chip e">erofs-utils</span><div class="t">erofs</div><span class="muted">no reply · Sep 20</span></div>
+      <div class="crd"><span class="chip q">QEMU</span><div class="t">hw-vfio-recover-from-disabled</div><span class="muted">RFC · Jul 16</span></div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">reenable-runtime-pm-for</div><span class="muted">no reply · 2024</span></div>
+    </div>
+    <div class="col"><div class="h">Reviewed · 1</div>
+      <div class="crd u"><span class="chip q">QEMU</span> <span class="badge">2</span><div class="t">vfio-igd-sanitize-dbuf-ctl-power</div><span class="muted">Reviewed-by Tomita Moeko · waiting for maintainer</span></div>
+    </div>
+    <div class="col"><div class="h">Accepted · 1</div>
+      <div class="crd u"><span class="chip k">kernel</span> <span class="badge">3</span><div class="t">iowq-cpuset</div><span class="muted">Jens Axboe · io_uring-7.4</span></div>
+    </div>
+    <div class="col"><div class="h">Applied · 0</div></div>
+    <div class="col"><div class="h">Released · 2</div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">kvm-bar-efault</div><span class="muted">v2 · v7.4-rc1</span></div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">kbuild-use-objtree-for-module</div><span class="muted">v6.19-rc1</span></div>
+    </div>
+    <div class="col"><div class="h">Backports</div>
+      <div class="crd u"><span class="chip k">kernel</span><div class="t">iowq-cpuset</div><span class="ok">3 apply</span> · <span class="warn">1 after queue</span> · <span class="bad">1 conflict</span></div>
+    </div>
+  </div>
+</div>
+</div>
+</div>
+
+<!-- ============================ C: two panes ============================ -->
+<div class="opt-wrap">
+<div class="option" data-choice="c" onclick="toggleSelect(this)">
+<div class="opt-head"><div class="letter">C</div><div><h3 style="margin:0">List + detail</h3><p style="margin:2px 0 0">Like a mail client. Patches on the left, grouped as unread / your turn / waiting / done. The selected patch fills the right: its trail, what changed, the stable branches and the thread.</p></div></div>
+<div class="pt">
+  <div class="bar">
+    <b>patchtrail</b>
+    <span class="btn on">All projects</span><span class="btn">kernel</span><span class="btn">QEMU</span><span class="btn">…</span>
+    <span class="sp"></span>
+    <span class="muted">fetched 10:12 · next 13:12</span><span class="btn">Fetch now</span>
+  </div>
+  <div class="panes">
+    <div class="list">
+      <h4>Unread</h4>
+      <div class="li sel"><span class="dot"></span> <span class="n">iowq-cpuset</span> <span class="chip k">kernel</span><div class="muted">accepted · 3 changes</div></div>
+      <div class="li"><span class="dot"></span> <span class="n">vfio-igd-sanitize-dbuf-ctl…</span> <span class="chip q">QEMU</span><div class="muted">reviewed · 2 changes</div></div>
+      <div class="li"><span class="dot"></span> <span class="n">tpm-include-efi-status…</span> <span class="chip g">GRUB</span><div class="turn">your turn</div></div>
+      <h4>Your turn</h4>
+      <div class="li"><span class="n">net-stmmac-do-not-enable…</span> <span class="chip k">kernel</span><div class="muted">Jiri Pirko · 2024</div></div>
+      <h4>Waiting</h4>
+            <div class="li"><span class="n">iowq-cpuset-liburing</span> <span class="chip l">liburing</span><div class="muted">no reply · Nov 11</div></div>
+      <div class="li"><span class="n">erofs</span> <span class="chip e">erofs-utils</span><div class="muted">no reply · Sep 20</div></div>
+      <div class="li muted">+2 more</div>
+      <h4>Done</h4>
+      <div class="li"><span class="n">kvm-bar-efault</span> <span class="chip k">kernel</span><div class="muted">v2 · released v7.4-rc1</div></div>
+      <div class="li"><span class="n">kbuild-use-objtree-for-mod…</span> <span class="chip k">kernel</span><div class="muted">released v6.19-rc1</div></div>
+      <div class="li muted">1 hidden</div>
+    </div>
+    <div class="detail">
+      <div><span class="chip k">kernel</span> <span class="muted mono">iowq-cpuset</span></div>
+      <div style="font-size:15px;font-weight:600;margin:4px 0">io_uring/io-wq: apply the current cpuset to new workers</div>
+      <div><span class="btn">Mark read</span> <span class="btn">Hide</span> <span class="btn">Open in lore ↗</span> <span class="muted">· commit <span class="mono">0659e44ce739</span> · Fixes <span class="mono">84eacf177faa</span> (v6.12-rc1) · Cc: stable</span></div>
+      <div class="trail">
+        <div class="step d"><div class="o"></div>submitted<br><span class="muted">Nov 11</span></div>
+        <div class="step"><div class="o"></div>reviewed<br><span class="muted">–</span></div>
+        <div class="step d"><div class="o"></div>accepted<br><span class="muted">Nov 18</span></div>
+        <div class="step"><div class="o"></div>mainline<br><span class="muted">not yet</span></div>
+        <div class="step"><div class="o"></div>released<br><span class="muted"></span></div>
+        <div class="step"><div class="o"></div>backports<br><span class="muted">0 / 5</span></div>
+      </div>
+      <div class="box">
+        <b>Since you read it on Nov 12</b>
+        <div>stage: <span class="old">submitted</span> → <span class="new">accepted</span> · Applied by Jens Axboe to io_uring-7.4</div>
+        <div>mail: +3 · first stable check ran</div>
+      </div>
+      <table>
+        <tr><th>branch</th><th>state</th><th>detail</th></tr>
+        <tr><td class="mono">7.3.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+        <tr><td class="mono">6.18.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+        <tr><td class="mono">6.12.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+        <tr><td class="mono">6.6.y</td><td class="warn">applies</td><td class="muted">after 2 queued patches to io_uring/io-wq.c</td></tr>
+        <tr><td class="mono">6.1.y</td><td class="bad">conflict</td><td class="muted">io_uring/io-wq.c · lines from <span class="mono">751eedc4b4b7</span>, <span class="mono">eb47943f2238</span>, <span class="mono">dfd63baf892c</span> (not marked for stable) <span class="btn">backport…</span></td></tr>
+        <tr><td class="mono">5.15.y</td><td class="muted">not affected</td><td class="muted">no 84eacf177faa</td></tr>
+        <tr><td class="mono">5.10.y</td><td class="muted">not affected</td><td class="muted">no 84eacf177faa</td></tr>
+      </table>
+      <div style="margin-top:10px" class="muted">Thread · 4 mails, 1 new — <span style="color:var(--accent)">read here</span></div>
+    </div>
+  </div>
+</div>
+</div>
+</div>

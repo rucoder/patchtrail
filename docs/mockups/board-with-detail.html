@@ -1,0 +1,232 @@
+<style>
+.pt { font: 13px/1.45 system-ui, -apple-system, sans-serif; color: var(--text-primary); text-align: left; }
+.pt .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.pt .muted { color: var(--text-secondary); }
+.pt .chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 600; line-height: 18px; white-space: nowrap; }
+.pt .k { background: rgba(224,138,0,.16); color: #d08000; }
+.pt .q { background: rgba(229,72,77,.15); color: #e5484d; }
+.pt .g { background: rgba(142,78,198,.16); color: #9d5bd2; }
+.pt .e { background: rgba(18,165,148,.16); color: #12a594; }
+.pt .l { background: rgba(62,99,221,.16); color: #4c6fe8; }
+.pt .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; }
+.pt .turn { color: var(--error); font-weight: 600; }
+.pt .ok { color: var(--success); font-weight: 600; }
+.pt .bad { color: var(--error); font-weight: 600; }
+.pt .warn { color: var(--warning); font-weight: 600; }
+.pt .old { color: var(--text-secondary); }
+.pt .new { font-weight: 600; }
+.pt .bar { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-primary); flex-wrap: wrap; }
+.pt .bar .sp { flex: 1; }
+.pt .btn { border: 1px solid var(--border); background: var(--bg-secondary); border-radius: 6px; padding: 1px 8px; font-size: 12px; color: var(--text-primary); white-space: nowrap; display: inline-block; }
+.pt .btn.on { background: var(--accent); color: #fff; border-color: var(--accent); }
+.pt .board { display: grid; grid-template-columns: repeat(6, minmax(125px, 1fr)); gap: 8px; padding: 10px; }
+.pt .col { background: var(--bg-primary); border-radius: 8px; padding: 6px; height: 230px; overflow: hidden; position: relative; }
+.pt .col > .h { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--text-secondary); padding: 2px 4px 6px; }
+.pt .crd { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 5px 7px; margin-bottom: 6px; font-size: 12px; }
+.pt .crd.u { border-left: 3px solid var(--accent); }
+.pt .crd.sel { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pt .crd .t { font-weight: 600; margin: 1px 0; word-break: break-word; }
+.pt .badge { display: inline-block; background: var(--accent); color: #fff; border-radius: 8px; font-size: 10px; padding: 0 6px; font-weight: 700; }
+.pt .pills { display: flex; gap: 2px; flex-wrap: wrap; margin-top: 3px; }
+.pt .pill { font-size: 10px; padding: 0 4px; border-radius: 3px; font-family: ui-monospace, monospace; }
+.pt .p-ok { background: rgba(52,199,89,.2); color: var(--success); }
+.pt .p-warn { background: rgba(255,159,10,.2); color: var(--warning); }
+.pt .p-bad { background: rgba(255,59,48,.18); color: var(--error); }
+.pt .p-na { background: var(--bg-tertiary); color: var(--text-secondary); }
+.pt .fade { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px; text-align: center; font-size: 11px; color: var(--text-secondary); background: linear-gradient(transparent, var(--bg-primary) 40%); }
+.pt .split { height: 6px; background: var(--bg-tertiary); cursor: row-resize; display: flex; justify-content: center; align-items: center; }
+.pt .split i { width: 40px; height: 2px; background: var(--border); border-radius: 1px; }
+.pt .panel { border-top: 1px solid var(--border); background: var(--bg-secondary); }
+.pt .phead { display: flex; gap: 10px; align-items: center; padding: 10px 16px 0; flex-wrap: wrap; }
+.pt .phead .title { font-size: 15px; font-weight: 600; }
+.pt .tabs { display: flex; gap: 2px; padding: 8px 16px 0; border-bottom: 1px solid var(--border); }
+.pt .tab { padding: 4px 12px; border-radius: 6px 6px 0 0; color: var(--text-secondary); font-weight: 600; font-size: 12px; }
+.pt .tab.on { color: var(--text-primary); border: 1px solid var(--border); border-bottom: 1px solid var(--bg-secondary); margin-bottom: -1px; background: var(--bg-secondary); }
+.pt .pbody { padding: 12px 16px 16px; }
+.pt .trail { display: flex; align-items: flex-start; margin: 2px 0 12px; }
+.pt .step { flex: 1; text-align: center; position: relative; font-size: 11px; }
+.pt .step:before { content: ""; position: absolute; top: 7px; left: -50%; width: 100%; height: 2px; background: var(--bg-tertiary); }
+.pt .step:first-child:before { display: none; }
+.pt .step.d:before { background: var(--success); }
+.pt .step .o { width: 14px; height: 14px; border-radius: 50%; background: var(--bg-tertiary); margin: 0 auto 3px; position: relative; z-index: 1; border: 2px solid var(--bg-secondary); }
+.pt .step.d .o { background: var(--success); }
+.pt .step.skip .o { background: transparent; border: 2px dashed var(--border); }
+.pt .cols2 { display: grid; grid-template-columns: 1.25fr 1fr; gap: 18px; }
+.pt .box { border: 1px solid var(--accent); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; background: var(--selected-bg); }
+.pt table { border-collapse: collapse; width: 100%; font-size: 12px; }
+.pt td, .pt th { text-align: left; padding: 3px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+.pt th { font-size: 11px; color: var(--text-secondary); font-weight: 600; }
+.pt .sec { font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--text-secondary); font-weight: 700; margin: 0 0 4px; }
+.pt .tl div { padding: 2px 0; }
+/* thread */
+.pt .msg { border: 1px solid var(--border); border-radius: 6px; margin: 6px 0; overflow: hidden; }
+.pt .msg.new { border-color: var(--accent); }
+.pt .mh { display: flex; gap: 10px; align-items: baseline; padding: 5px 10px; background: var(--bg-primary); font-size: 12px; }
+.pt .mh .who { font-weight: 600; }
+.pt .mh .sp { flex: 1; }
+.pt pre.mb { margin: 0; padding: 8px 12px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; color: var(--text-primary); background: var(--bg-secondary); }
+.pt .q1 { color: #3e7bfa; } .pt .q2 { color: #0aa5b5; }
+.pt .dg { font-weight: 700; } .pt .df { color: #3e7bfa; } .pt .dh { color: #0aa5b5; }
+.pt .da { color: #2da44e; } .pt .dd { color: #e5484d; }
+.pt .tr { color: #b04bd0; font-weight: 600; } .pt .tf { color: #c79a00; font-weight: 600; }
+.pt .ind1 { margin-left: 22px; } .pt .ind2 { margin-left: 44px; }
+.mock-frame { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin: 10px 0 30px; background: var(--bg-secondary); }
+</style>
+
+<h2>Board on top, the clicked patch opens below</h2>
+<p class="subtitle">One page: the board stays visible, the panel under it shows the selected card (C without its left list). Drag the divider to give either more room. Esc or × closes the panel.</p>
+
+<div class="mock-frame"><div class="pt">
+  <div class="bar">
+    <b>patchtrail</b>
+    <span class="btn on">All</span><span class="btn">kernel</span><span class="btn">QEMU</span><span class="btn">GRUB</span><span class="btn">erofs-utils</span><span class="btn">liburing</span>
+    <span class="btn">Unread only · 3</span><span class="btn">Your turn · 2</span>
+    <span class="sp"></span>
+    <span class="muted">fetched 10:12 · next 13:12</span><span class="btn">Fetch now</span>
+  </div>
+  <div class="board">
+    <div class="col"><div class="h">Submitted · 6</div>
+      <div class="crd u"><span class="chip g">GRUB</span> <span class="badge">1</span><div class="t">tpm-include-efi-status-code-in</div><span class="turn">your turn</span></div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">net-stmmac-do-not-enable-disable</div><span class="turn">your turn</span> <span class="muted">· 2024</span></div>
+      <div class="crd"><span class="chip l">liburing</span><div class="t">iowq-cpuset-liburing</div><span class="muted">no reply · Nov 11</span></div>
+      <div class="crd"><span class="chip e">erofs-utils</span><div class="t">erofs</div><span class="muted">no reply · Sep 20</span></div>
+      <div class="fade">+2 more</div>
+    </div>
+    <div class="col"><div class="h">Reviewed · 1</div>
+      <div class="crd u"><span class="chip q">QEMU</span> <span class="badge">2</span><div class="t">vfio-igd-sanitize-dbuf-ctl-power</div><span class="muted">waiting for maintainer</span></div>
+    </div>
+    <div class="col"><div class="h">Accepted · 1</div>
+      <div class="crd u sel"><span class="chip k">kernel</span> <span class="badge">3</span><div class="t">iowq-cpuset</div><span class="muted">Jens Axboe · io_uring-7.4</span>
+        <div class="pills"><span class="pill p-ok">7.3</span><span class="pill p-ok">6.18</span><span class="pill p-ok">6.12</span><span class="pill p-warn">6.6</span><span class="pill p-bad">6.1</span><span class="pill p-na">5.15</span><span class="pill p-na">5.10</span></div></div>
+    </div>
+    <div class="col"><div class="h">Applied · 0</div></div>
+    <div class="col"><div class="h">Released · 2</div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">kvm-bar-efault</div><span class="muted">v2 · v7.4-rc1</span></div>
+      <div class="crd"><span class="chip k">kernel</span><div class="t">kbuild-use-objtree-for-module</div><span class="muted">v6.19-rc1</span></div>
+    </div>
+    <div class="col"><div class="h">Backports · 0</div><div class="muted" style="font-size:11px;padding:4px">kernel fixes in mainline whose stable branches are still open</div></div>
+  </div>
+  <div class="split"><i></i></div>
+  <div class="panel">
+    <div class="phead">
+      <span class="chip k">kernel</span><span class="mono muted">iowq-cpuset</span>
+      <span class="title">io_uring/io-wq: apply the current cpuset to new workers</span>
+      <span style="flex:1"></span>
+      <span class="btn">Mark read</span><span class="btn">Hide</span><span class="btn">lore ↗</span><span class="muted">×</span>
+    </div>
+    <div class="tabs"><span class="tab on">Overview</span><span class="tab">Thread · 4 <span class="dot"></span></span><span class="tab">History</span></div>
+    <div class="pbody">
+      <div class="trail">
+        <div class="step d"><div class="o"></div>submitted<br><span class="muted">Nov 11</span></div>
+        <div class="step skip"><div class="o"></div>reviewed<br><span class="muted">no tags</span></div>
+        <div class="step d"><div class="o"></div>accepted<br><span class="muted">Nov 18 · io_uring-7.4</span></div>
+        <div class="step"><div class="o"></div>applied<br><span class="muted">mainline: not yet</span></div>
+        <div class="step"><div class="o"></div>released<br><span class="muted"></span></div>
+        <div class="step"><div class="o"></div>backports<br><span class="muted">0 of 5 branches</span></div>
+      </div>
+      <div class="cols2">
+        <div>
+          <div class="box">
+            <b>Since you read it on Nov 12</b>
+            <div>stage: <span class="old">submitted</span> → <span class="new">accepted</span> · Jens Axboe applied it to io_uring-7.4 · <span class="mono">0659e44ce739</span></div>
+            <div>mail: +1 · Jens Axboe: “Applied, thanks!”</div>
+            <div>stable: first check · 3 apply, 6.6 after 2 queued, 6.1 conflicts</div>
+          </div>
+          <div class="sec">Stable and longterm</div>
+          <table>
+            <tr><th>branch</th><th>state</th><th>detail</th></tr>
+            <tr><td class="mono">7.3.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+            <tr><td class="mono">6.18.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+            <tr><td class="mono">6.12.y</td><td class="ok">applies</td><td class="muted">cleanly</td></tr>
+            <tr><td class="mono">6.6.y</td><td class="warn">applies</td><td class="muted">after 2 queued patches to io_uring/io-wq.c</td></tr>
+            <tr><td class="mono">6.1.y</td><td class="bad">conflict</td><td class="muted">io_uring/io-wq.c · the lines come from <span class="mono">751eedc4b4b7</span> <span class="mono">eb47943f2238</span> <span class="mono">dfd63baf892c</span>, none marked for stable</td></tr>
+            <tr><td class="mono">5.15.y</td><td class="muted">not affected</td><td class="muted">no 84eacf177faa</td></tr>
+            <tr><td class="mono">5.10.y</td><td class="muted">not affected</td><td class="muted">no 84eacf177faa</td></tr>
+          </table>
+          <div class="muted" style="margin-top:6px">Fixes <span class="mono">84eacf177faa</span> (v6.12-rc1) · Cc: stable · FAILED mails from stable: none</div>
+        </div>
+        <div>
+          <div class="sec">Thread</div>
+          <div class="tl">
+            <div><span class="muted">Nov 11</span> <b>you</b> · [PATCH] io_uring/io-wq: apply the current cpuset…</div>
+            <div class="ind1"><span class="muted">Nov 12</span> <b>Felix Moessbauer</b> · that's a valid finding. Why not simply fail…</div>
+            <div class="ind2"><span class="muted">Nov 12</span> <b>you</b> · This only matters for an application that…</div>
+            <div class="ind1"><span class="dot"></span> <span class="muted">Nov 18</span> <b>Jens Axboe</b> · Applied, thanks! commit: 0659e44ce739</div>
+          </div>
+          <div class="sec" style="margin-top:12px">History</div>
+          <div class="tl muted">
+            <div>Nov 18 13:12 · accepted (Jens Axboe, io_uring-7.4)</div>
+            <div>Nov 18 13:12 · stable check: 7 branches</div>
+            <div>Nov 12 16:12 · +2 mails</div>
+            <div>Nov 11 19:12 · found on lore</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<h2>The Thread tab of the same panel</h2>
+<p class="subtitle">Nested by reply; new mail outlined and open, the rest collapsed to one line. Your neomuttrc colors: diff headers, hunks, +/− lines, two quote levels, trailers.</p>
+
+<div class="mock-frame"><div class="pt">
+  <div class="phead" style="padding-bottom:0">
+    <span class="chip k">kernel</span><span class="mono muted">iowq-cpuset</span>
+    <span class="title">io_uring/io-wq: apply the current cpuset to new workers</span>
+    <span style="flex:1"></span><span class="btn">Expand all</span><span class="btn">Open in neomutt: ptl open iowq-cpuset</span>
+  </div>
+  <div class="tabs"><span class="tab">Overview</span><span class="tab on">Thread · 4 <span class="dot"></span></span><span class="tab">History</span></div>
+  <div class="pbody">
+    <div class="msg">
+      <div class="mh"><span class="who">you</span><span>[PATCH] io_uring/io-wq: apply the current cpuset to new workers</span><span class="sp"></span><span class="muted">Nov 11 16:27</span><span class="muted">lore ↗</span></div>
+      <pre class="mb">Since commit 84eacf177faa ("io_uring/io-wq: inherit cpuset of cgroup in
+io worker"), io_wq_create() copies the cpuset of the creating task into
+wq->cpu_mask, and io_init_new_worker() gives each new worker that copy.
+<span class="muted">… 14 lines …</span>
+
+<span class="tf">Fixes:</span> 84eacf177faa ("io_uring/io-wq: inherit cpuset of cgroup in io worker")
+<span class="tf">Cc:</span> stable@vger.kernel.org
+<span class="tr">Signed-off-by:</span> Mikhail Malyshev &lt;mike.malyshev@gmail.com&gt;
+---
+<span class="muted">… notes …</span>
+<span class="dg">diff --git a/io_uring/io-wq.c b/io_uring/io-wq.c</span>
+<span class="df">--- a/io_uring/io-wq.c</span>
+<span class="df">+++ b/io_uring/io-wq.c</span>
+<span class="dh">@@ -741,6 +741,34 @@ static bool io_worker_retire(struct io_wq_acct *acct, struct io_worker *worker)</span>
+ 	return false;
+ }
+
+<span class="da">+static void io_wq_worker_cpus(struct io_wq *wq, struct task_struct *tsk,</span>
+<span class="da">+			      struct cpumask *cpus)</span>
+<span class="da">+{</span>
+<span class="da">+	cpuset_cpus_allowed(tsk, cpus);</span>
+<span class="da">+	if (cpumask_intersects(cpus, wq->cpu_mask))</span>
+<span class="da">+		cpumask_and(cpus, cpus, wq->cpu_mask);</span>
+<span class="da">+}</span>
+<span class="muted">… 40 more lines of diff …</span></pre>
+    </div>
+    <div class="msg ind1">
+      <div class="mh"><span class="who">Felix Moessbauer</span><span class="muted">that's a valid finding. … Why not simply fail the worker creation if the intersection is empty?</span><span class="sp"></span><span class="muted">Nov 12 07:52</span></div>
+    </div>
+    <div class="msg ind2">
+      <div class="mh"><span class="who">you</span><span class="muted">This only matters for an application that registered a mask with IORING_REGISTER_IOWQ_AFF…</span><span class="sp"></span><span class="muted">Nov 12 14:54</span></div>
+    </div>
+    <div class="msg new ind1">
+      <div class="mh"><span class="dot"></span><span class="who">Jens Axboe</span><span>Re: [PATCH] io_uring/io-wq: apply the current cpuset to new workers</span><span class="sp"></span><span class="muted">Nov 18 16:07</span><span class="muted">lore ↗</span></div>
+      <pre class="mb">On Wed, 11 Nov 2026 16:27:05 +0000, Mikhail Malyshev wrote:
+<span class="q1">&gt; Since commit 84eacf177faa ("io_uring/io-wq: inherit cpuset of cgroup in</span>
+<span class="q1">&gt; io worker"), io_wq_create() copies the cpuset of the creating task into</span>
+<span class="q1">&gt; wq->cpu_mask, and io_init_new_worker() gives each new worker that copy.</span>
+<span class="q1">&gt; [...]</span>
+
+Applied, thanks!
+
+[1/1] io_uring/io-wq: apply the current cpuset to new workers
+      commit: 0659e44ce739ecd856164c75a5325b7959a2921d
+
+Best regards,
+--
+Jens Axboe</pre>
+    </div>
+  </div>
+</div></div>
