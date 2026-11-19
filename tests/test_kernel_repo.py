@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 from patchtrail.config import KernelUrls
@@ -84,3 +85,30 @@ def test_backport_subject_and_body(fetched, kfix, queue):
     text = queue.patches("6.4")[0].text
     assert "Subject: [PATCH] fix io" in text
     assert f"commit {f} upstream." in text
+
+
+NET_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_HTTP_LOW_SPEED_LIMIT": "1000",
+           "GIT_HTTP_LOW_SPEED_TIME": "60"}
+
+
+def test_network_git_calls_never_prompt(tmp_path, kfix, monkeypatch):
+    import subprocess
+
+    calls = []
+    real = subprocess.run
+
+    def spy(args, *a, **kw):
+        calls.append((list(args), kw.get("env")))
+        return real(args, *a, **kw)
+
+    monkeypatch.setattr(subprocess, "run", spy)
+    r = KernelRepo(tmp_path / "linux.git"); r.ensure(None)
+    r.fetch(kfix.urls, ["6.1"], [(kfix.tree_url, "for-next")], NullProgress())
+    r.fetch_trees([(kfix.tree_url, "*")], NullProgress())
+    q = StableQueue(tmp_path / "stable-queue")
+    q.update(kfix.urls.queue, NullProgress()); q.update(kfix.urls.queue, NullProgress())
+    net = [(args, env) for args, env in calls if "fetch" in args or "clone" in args]
+    assert len(net) == 7      # mainline, stable, next, tree; tree "*"; queue clone, queue fetch
+    for args, env in net:
+        assert env is not None and {k: env.get(k) for k in NET_ENV} == NET_ENV, args
+        assert env["GIT_CONFIG_GLOBAL"] == os.environ["GIT_CONFIG_GLOBAL"]   # merged over the environment

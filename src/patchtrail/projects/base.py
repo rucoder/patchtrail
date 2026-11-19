@@ -39,6 +39,7 @@ class TrailResult:
     commits_found: list[tuple[str, str, str]] = field(default_factory=list)
     tree: tuple[str, str] | None = None
     fragment: dict = field(default_factory=dict)
+    replaced: dict[str, str] = field(default_factory=dict)   # old full sha -> rebased commit
 
 
 class Progress(Protocol):

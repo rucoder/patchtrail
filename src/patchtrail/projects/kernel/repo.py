@@ -1,6 +1,7 @@
 """The kernel git repository: namespaced refs, release tags, first-release lookups."""
 
 import json
+import os
 import re
 import subprocess
 import urllib.request
@@ -31,6 +32,14 @@ def slug(url: str) -> str:
 
 class GitError(Exception):
     pass
+
+
+def net_env() -> dict[str, str]:
+    """The environment of a git call that reaches a remote: never wait on a
+    credential prompt (a missing GitHub repository answers 401 and git asks on
+    the terminal), and abort an HTTP transfer stalled for a minute."""
+    return {**os.environ, "GIT_TERMINAL_PROMPT": "0",
+            "GIT_HTTP_LOW_SPEED_LIMIT": "1000", "GIT_HTTP_LOW_SPEED_TIME": "60"}
 
 
 class Git:
@@ -91,16 +100,15 @@ class KernelRepo(Git):
               trees: list[tuple[str, str]], progress: Progress) -> None:
         self._tags.clear()
         progress.step("mainline")
-        self.run("fetch", "-q", "--no-tags", urls.mainline,
-                 f"+refs/heads/master:{MAINLINE}", f"+refs/tags/v*:{TAGS}/v*")
+        self._fetch(urls.mainline, f"+refs/heads/master:{MAINLINE}", f"+refs/tags/v*:{TAGS}/v*")
         progress.step("stable")
         specs = []
         for s in series:
             specs += [f"+refs/heads/linux-{s}.y:{stable_ref(s)}",
                       f"+refs/tags/v{s}.*:{TAGS}/v{s}.*"]
-        self.run("fetch", "-q", "--no-tags", urls.stable, *specs)
+        self._fetch(urls.stable, *specs)
         progress.step("linux-next")
-        self.run("fetch", "-q", "--no-tags", urls.next, f"+refs/heads/master:{NEXT}")
+        self._fetch(urls.next, f"+refs/heads/master:{NEXT}")
         for url, branch in trees:
             progress.step(f"tree {url} {branch}")
             self._fetch_tree(url, branch)
@@ -123,8 +131,10 @@ class KernelRepo(Git):
     def _fetch_tree(self, url: str, branch: str) -> None:
         # --prune drops the refs of branches the tree deleted.
         prune = ["--prune"] if branch == "*" else []
-        self.run("fetch", "-q", "--no-tags", *prune, url,
-                 f"+refs/heads/{branch}:{tree_ref(slug(url), branch)}")
+        self._fetch(*prune, url, f"+refs/heads/{branch}:{tree_ref(slug(url), branch)}")
+
+    def _fetch(self, *args) -> None:
+        self.run("fetch", "-q", "--no-tags", *args, env=net_env())
 
     def _write_graph(self) -> None:
         # Generation numbers turn each "is A in B?" from a history walk of

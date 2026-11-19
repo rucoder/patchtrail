@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from patchtrail.projects.base import Progress
-from patchtrail.projects.kernel.repo import Git, GitError
+from patchtrail.projects.kernel.repo import Git, GitError, net_env
 
 
 @dataclass(frozen=True)
@@ -25,12 +25,12 @@ class StableQueue(Git):
         progress.step("stable-queue")
         self._cache.clear()
         if (self.path / ".git").is_dir():
-            self.run("fetch", "-q", "--depth", "1", "origin", "master")
+            self.run("fetch", "-q", "--depth", "1", "origin", "master", env=net_env())
             self.run("reset", "-q", "--hard", "FETCH_HEAD")
             return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         p = subprocess.run(["git", "clone", "-q", "--depth", "1", "--sparse", url, str(self.path)],
-                           capture_output=True, text=True)
+                           capture_output=True, text=True, env=net_env())
         if p.returncode:
             raise GitError(f"git clone {url}: {p.stderr.strip()}")
         self.run("sparse-checkout", "set", "--no-cone", "/queue-*/")

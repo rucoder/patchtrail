@@ -163,3 +163,35 @@ def test_fetch_trees_logs_a_dead_tree(fetched, kfix, tmp_path):
     fetched.fetch_trees([((tmp_path / "gone").as_uri(), "*"), (kfix.tree_url, "for-next")], progress)
     assert len(logged) == 1 and "gone" in logged[0]
     assert fetched.resolve(f"refs/patchtrail/trees/{slug(kfix.tree_url)}/for-next") == kfix.sha["G"]
+
+
+def test_later_applied_reply_adds_to_stored_commits(trail, view, kfix):          # R21 (a)
+    F, U = kfix.sha["F"], kfix.sha["U"]
+    v = view(commits=[{"sha": F, "subject": "fix io", "source": "applied-mail"}],
+             mails=[root("fix io"), ty("[1/2] fix io\n      commit: " + F[:12] + "\n"),
+                    ty("[2/2] untagged io cleanup\n      commit: " + U[:12] + "\n")])
+    trail.prepare([v], NullProgress()); res = trail.evaluate(v, NullProgress())
+    assert [c["sha"] for c in res.fragment["commits"]] == [F, U]
+    assert res.commits_found == [(U, "untagged io cleanup", "applied-mail")]
+    assert res.replaced == {}
+
+
+@pytest.mark.parametrize("source", ["applied-mail", "search", "manual"])
+def test_rebased_commit_is_replaced_unless_manual(trail, view, kfix, source):    # R21 (b)
+    gone = "de" * 20                                           # rebased away: in no ref
+    v = view(commits=[{"sha": gone, "subject": "fix io", "source": source}])
+    trail.prepare([v], NullProgress()); res = trail.evaluate(v, NullProgress())
+    c = res.fragment["commits"][0]
+    if source == "manual":
+        assert res.replaced == {} and (c["sha"], c["where"]) == (gone, "missing")
+    else:
+        assert res.replaced == {gone: kfix.sha["F"]}
+        assert (c["sha"], c["where"], c["release"]) == (kfix.sha["F"], "mainline", "v6.5-rc1")
+        assert kfix.sha["F"][:12] in res.fragment["branches"]["6.1"]
+    assert res.commits_found == []
+
+
+def test_dropped_commit_stays_missing(trail, view):
+    v = view(commits=[{"sha": "de" * 20, "subject": "never merged", "source": "applied-mail"}])
+    trail.prepare([v], NullProgress()); res = trail.evaluate(v, NullProgress())
+    assert res.replaced == {} and res.fragment["commits"][0]["where"] == "missing"

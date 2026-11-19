@@ -48,7 +48,7 @@ class KernelTrail(Trail):
     def _trees_for(self, p: PatchView, upstream: set[str]) -> list[tuple[str, str]]:
         if p.tree and p.tree_source == "manual":
             return [p.tree]
-        known = [sha for sha, _, _ in self._known(p)]
+        known = [k[0] for k in self._known(p)]
         if known and all(self._upstream(sha) for sha in known):
             return []
         if p.tree:
@@ -63,13 +63,18 @@ class KernelTrail(Trail):
         return bool(full) and (self.repo.is_ancestor(full, MAINLINE)
                                or self.repo.is_ancestor(full, NEXT))
 
-    def _known(self, p: PatchView) -> list[tuple[str, str, str]]:
-        """(sha, subject, source) of the commits the patch or its mail names."""
-        if p.commits:
-            return [(c["sha"], c.get("subject") or "", c.get("source") or "manual")
-                    for c in p.commits]
-        return [(sha, subject, "applied-mail")
-                for subject, sha in commits_from_mail(p.mails, self.mine)]
+    def _known(self, p: PatchView) -> list[tuple[str, str, str, bool]]:
+        """(sha, subject, source, stored) of the patch's stored commits, then of
+        those its "Applied" replies name that are not stored yet: a series can
+        be applied over several replies."""
+        out = [(c["sha"], c.get("subject") or "", c.get("source") or "manual", True)
+               for c in p.commits]
+        seen = {k[0][:12].lower() for k in out}
+        for subject, sha in commits_from_mail(p.mails, self.mine):
+            if sha[:12].lower() not in seen:
+                seen.add(sha[:12].lower())
+                out.append((sha, subject, "applied-mail", False))
+        return out
 
     def _tree_refs(self, p: PatchView) -> list[tuple[str, str, str]]:
         """(ref, url, branch) of the patch's fetched trees."""
@@ -88,15 +93,22 @@ class KernelTrail(Trail):
 
     def evaluate(self, patch: PatchView, progress: Progress) -> TrailResult:
         trees = self._tree_refs(patch)
+        refs = [NEXT, MAINLINE] + [ref for ref, _, _ in trees]
         known = self._known(patch)
         if not known:
-            sha = search_commit(self.repo, patch.subject, patch.author, patch.posted_at,
-                                [NEXT, MAINLINE] + [ref for ref, _, _ in trees])
-            known = [(sha, "", "search")] if sha else []
+            sha = search_commit(self.repo, patch.subject, patch.author, patch.posted_at, refs)
+            known = [(sha, "", "search", False)] if sha else []
         result = TrailResult()
         commits, stable = [], []
-        for sha, subject, source in known:
+        for sha, subject, source, stored in known:
             c, full, tree = self._commit(sha, subject, patch, trees)
+            if stored and source != "manual" and c["where"] == "missing":
+                # A rebase gives the commit a new hash; a commit that stays
+                # missing was dropped from its tree.
+                new = search_commit(self.repo, c["subject"], patch.author, patch.posted_at, refs)
+                if new and new != full:
+                    result.replaced[full or sha] = new
+                    c, full, tree = self._commit(new, "", patch, trees)
             if any(c["sha"] == seen["sha"] for seen in commits):
                 continue                        # one commit named twice (short and full hash)
             commits.append(c)
@@ -104,7 +116,7 @@ class KernelTrail(Trail):
                 result.tree = tree
             if c["stable"] and full:
                 stable.append(c)
-            if not patch.commits:
+            if not stored:
                 result.commits_found.append((c["sha"], c["subject"], source))
         branches: dict[str, dict] = {}
         for c in stable:
