@@ -240,7 +240,15 @@ class _Run:
         except Exception as e:      # the patch keeps its stored mails and state
             self.progress.log(f"{row['name']}: cannot fetch <{root_id}>: {_why(e)}")
             return False
-        store.upsert_mails(self.conn, rev["id"], raws, int(self.now()))
+        try:
+            if self.conn.execute("SELECT 1 FROM revisions WHERE id=?", (rev["id"],)).fetchone() is None:
+                self.progress.log(f"{row['name']}: removed during the run")
+                return False
+            store.upsert_mails(self.conn, rev["id"], raws, int(self.now()))
+        except sqlite3.Error as e:  # e.g. the patch was removed while the thread came in
+            self.conn.rollback()
+            self.progress.log(f"{row['name']}: cannot store <{root_id}>: {_why(e)}")
+            return False
         return True
 
     def _sync(self, rev) -> MailInfo | None:
@@ -349,12 +357,14 @@ class _Run:
             store.replace_commit(self.conn, pid, old, new, subject, source="search")
         for sha, subject, source in result.commits_found:
             store.set_commit(self.conn, pid, sha, subject, source)
-        if result.tree and row["tree_source"] != "manual":
+        if result.tree:
+            # One statement, so a tree the user sets by hand meanwhile is never overwritten.
             url, branch = result.tree
-            if (row["tree_url"], row["tree_branch"], row["tree_source"]) != (url, branch, "auto"):
-                store.set_field(self.conn, pid, "tree_url", url)
-                store.set_field(self.conn, pid, "tree_branch", branch)
-                store.set_field(self.conn, pid, "tree_source", "auto")
+            self.conn.execute(
+                "UPDATE patches SET tree_url=?, tree_branch=?, tree_source='auto' WHERE id=?"
+                " AND tree_source IS NOT 'manual' AND (tree_url IS NOT ? OR tree_branch IS NOT ?"
+                " OR tree_source IS NOT 'auto')", (url, branch, pid, url, branch))
+            self.conn.commit()
 
 
 def _selected(conn, names: list[str] | None) -> list[sqlite3.Row]:

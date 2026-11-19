@@ -649,3 +649,60 @@ def test_rm_during_the_run_leaves_it_ok(conn, cfgp):              # R27
     assert store.get_patch(conn, "gone") is None
     assert snapshot.latest(conn, kept) is not None
     assert any(l.startswith("gone:") for l in log_lines(conn, rid))
+
+
+def test_manual_tree_set_during_the_run_is_kept(conn, cfgp):      # R27
+    from patchtrail import db as _db
+    pid = kernel_patch(conn)
+
+    def follow(patch):
+        other = _db.connect(cfgp[0].db)
+        for col, val in (("tree_url", "https://mine"), ("tree_branch", "fixes"),
+                         ("tree_source", "manual")):
+            store.set_field(other, pid, col, val)
+        other.close()
+    trail = Hooked(follow)
+    trail.result = TrailResult(tree=("https://auto", "master"), fragment=empty())
+    run_fetch(*cfgp, "cli", source=FakeSource({"a@x": [make_mail("a@x")]}),
+              trails={"kernel": trail}, search=nosearch)
+    p = store.patch_by_id(conn, pid)
+    assert (p["tree_url"], p["tree_branch"], p["tree_source"]) == ("https://mine", "fixes", "manual")
+
+
+def test_rm_during_the_threads_phase_leaves_it_ok(conn, cfgp):    # R29
+    from patchtrail import db as _db
+    gone = kernel_patch(conn, "gone", "a@x")
+    kept = kernel_patch(conn, "kept", "k@x")
+
+    class RmSource(FakeSource):
+        def fetch(self, root_id):
+            if root_id == "a@x":
+                other = _db.connect(cfgp[0].db)
+                other.execute("DELETE FROM patches WHERE id=?", (gone,))
+                other.commit()
+                other.close()
+            return super().fetch(root_id)
+    src = RmSource({"a@x": [make_mail("a@x")], "k@x": [make_mail("k@x")]})
+    rid = run_fetch(*cfgp, "cli", source=src, trails={"kernel": FakeTrail()}, search=nosearch)
+    assert last_run(conn)["status"] == "ok" and last_run(conn)["id"] == rid
+    assert store.get_patch(conn, "gone") is None and snapshot.latest(conn, kept) is not None
+    assert any(l.startswith("gone:") for l in log_lines(conn, rid))
+
+
+def test_patch_deleted_before_evaluate_is_dropped(conn, cfgp):    # the fresh-is-None branch
+    from patchtrail import db as _db
+    gone = kernel_patch(conn, "gone", "a@x")
+    kept = kernel_patch(conn, "kept", "k@x")
+
+    def rm(patch):
+        if patch.name == "gone":
+            other = _db.connect(cfgp[0].db)
+            other.execute("DELETE FROM patches WHERE id=?", (gone,))
+            other.commit()
+            other.close()
+    rid = run_fetch(*cfgp, "cli", source=FakeSource({"a@x": [make_mail("a@x")],
+                                                     "k@x": [make_mail("k@x")]}),
+                    trails={"kernel": Hooked(rm)}, search=nosearch)
+    assert last_run(conn)["status"] == "ok"
+    assert "gone: removed during the run" in log_lines(conn, rid)
+    assert snapshot.latest(conn, kept) is not None
