@@ -196,3 +196,16 @@ def test_dropped_commit_stays_missing(trail, view):
     v = view(commits=[{"sha": "de" * 20, "subject": "never merged", "source": "applied-mail"}])
     trail.prepare([v], NullProgress()); res = trail.evaluate(v, NullProgress())
     assert res.replaced == {} and res.fragment["commits"][0]["where"] == "missing"
+
+
+def test_found_upstream_by_subject_needs_no_tree(trail, view, kfix):  # final review I5
+    v = view(subject="[PATCH] fix io", files=("io.c",), mails=[root("fix io")])
+    trail.prepare([v], NullProgress())          # nobody replied "Applied", but mainline has it
+    assert trail.repo.run("for-each-ref", "refs/patchtrail/trees/").strip() == ""
+    res = trail.evaluate(v, NullProgress())
+    assert res.commits_found == [(kfix.sha["F"], "fix io", "search")]
+    assert res.fragment["commits"][0]["where"] == "mainline"
+    waiting = view(id=2, subject="[PATCH] fix more io", files=("io.c",))
+    trail.prepare([v, waiting], NullProgress())                 # only in its tree: fetched
+    assert trail.repo.run("for-each-ref", "--format=%(refname)",
+                          "refs/patchtrail/trees/").split() != []

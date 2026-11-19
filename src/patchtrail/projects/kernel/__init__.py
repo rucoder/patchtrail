@@ -28,6 +28,8 @@ class KernelTrail(Trail):
         self.series: list[str] = []
         # patch id -> the (url, branch) trees fetched for it this run; "*" is every branch
         self._trees: dict[str, list[tuple[str, str]]] = {}
+        # patch id -> its commit found in linux-next or mainline by subject this run
+        self._upstream_found: dict[str, str] = {}
 
     # --- prepare ------------------------------------------------------------
 
@@ -38,6 +40,7 @@ class KernelTrail(Trail):
         self.repo.fetch(k, self.series, [], progress)
         # Trees second: which ones a patch needs depends on what mainline and next hold.
         upstream = {slug(u) for u in (k.mainline, k.next, k.stable)}
+        self._upstream_found = {}
         self._trees = {p.id: self._trees_for(p, upstream) for p in patches}
         wanted = list(dict.fromkeys(t for ts in self._trees.values() for t in ts))
         every = {u for u, b in wanted if b == "*"}
@@ -52,6 +55,13 @@ class KernelTrail(Trail):
         known = [k[0] for k in self._known(p)]
         if known and all(self._upstream(sha) for sha in known):
             return []
+        if not known:
+            # Nobody said "Applied": linux-next or mainline may have it under its subject,
+            # and then no tree is needed.
+            sha = search_commit(self.repo, p.subject, p.author, p.posted_at, [NEXT, MAINLINE])
+            if sha:
+                self._upstream_found[p.id] = sha
+                return []
         if p.tree:
             return [p.tree]
         # Nothing found yet: every tree MAINTAINERS names for the files, but not
@@ -97,7 +107,8 @@ class KernelTrail(Trail):
         refs = [NEXT, MAINLINE] + [ref for ref, _, _ in trees]
         known = self._known(patch)
         if not known:
-            sha = search_commit(self.repo, patch.subject, patch.author, patch.posted_at, refs)
+            sha = (self._upstream_found.get(patch.id)
+                   or search_commit(self.repo, patch.subject, patch.author, patch.posted_at, refs))
             known = [(sha, "", "search", False)] if sha else []
         result = TrailResult()
         commits, stable = [], []
