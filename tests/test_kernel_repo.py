@@ -69,8 +69,8 @@ def test_scenario(fetched, kfix):
     assert not any(f(b, s["F"]) for b in ("6.0", "6.1", "6.3", "6.4"))
     assert f("6.2", s["F62"]) and fetched.first_tag(s["F62"], "6.2") == "v6.2.1"
     assert not fetched.is_ancestor(s["U"], stable_ref("6.4"))
-    assert fetched.resolve(f"{MAINLINE}") == s["U"]
-    assert fetched.resolve(NEXT) == s["U"]
+    assert fetched.resolve(f"{MAINLINE}") == s["V"]
+    assert fetched.resolve(NEXT) == s["V"]
     assert fetched.resolve("refs/patchtrail/trees/-" + kfix.tree_url.split("file:///")[1].replace("/", "-")
                            + "/for-next") == s["G"]
     assert not fetched.is_ancestor(s["G"], MAINLINE)

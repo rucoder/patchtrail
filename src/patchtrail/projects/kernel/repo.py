@@ -103,11 +103,30 @@ class KernelRepo(Git):
         self.run("fetch", "-q", "--no-tags", urls.next, f"+refs/heads/master:{NEXT}")
         for url, branch in trees:
             progress.step(f"tree {url} {branch}")
-            self.run("fetch", "-q", "--no-tags", url,
-                     f"+refs/heads/{branch}:{tree_ref(slug(url), branch)}")
+            self._fetch_tree(url, branch)
         seeds = self.run("for-each-ref", "--format=delete %(refname)", f"{REFS}/seed/")
         if seeds:
             self.run("update-ref", "--stdin", input=seeds)
+        self._write_graph()
+
+    def fetch_trees(self, trees: list[tuple[str, str]], progress: Progress) -> None:
+        """Fetch maintainer trees only; branch "*" is every head. A tree that
+        cannot be fetched is logged and keeps its refs from earlier runs."""
+        for url, branch in trees:
+            progress.step(f"tree {url} {branch}")
+            try:
+                self._fetch_tree(url, branch)
+            except GitError as e:
+                progress.log(f"tree {url} {branch}: {e}")
+        self._write_graph()
+
+    def _fetch_tree(self, url: str, branch: str) -> None:
+        # --prune drops the refs of branches the tree deleted.
+        prune = ["--prune"] if branch == "*" else []
+        self.run("fetch", "-q", "--no-tags", *prune, url,
+                 f"+refs/heads/{branch}:{tree_ref(slug(url), branch)}")
+
+    def _write_graph(self) -> None:
         # Generation numbers turn each "is A in B?" from a history walk of
         # seconds into milliseconds; --split only adds the new commits.
         self.run("commit-graph", "write", "--reachable", "--split", "--no-progress")

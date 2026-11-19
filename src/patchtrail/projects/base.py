@@ -31,6 +31,7 @@ class PatchView:
     tree: tuple[str, str] | None = None
     tree_source: str | None = None
     prev_state: dict | None = None
+    files: tuple[str, ...] = ()       # paths of the `+++ b/` lines of the patch mails
 
 
 @dataclass

@@ -10,6 +10,7 @@ Mainline history (one commit per day from 2026-01-02, oldest first):
   r4 readme               v6.4
   F  fix io               v6.5-rc1  Fixes: B, Cc: stable; io.c line 10
   U  untagged io cleanup            new file cleanup.c
+  V  fix with unknown fixes         Fixes: 000000000000; new file other.c
 Tree repo: mainline plus G (fix more io) on branch for-next only.
 Next repo: mainline.
 Stable: linux-6.N.y from v6.N plus v6.N.1; 6.2 carries a cherry-pick of F.
@@ -117,6 +118,8 @@ def make_kernel_fixture(tmp: Path) -> KernelFixture:
         ml, {"io.c": _io(rewrite=True, fixed=True)},
         f'fix io\n\nFixes: {sha["B"][:12]} ("add bug")\nCc: stable@vger.kernel.org\n', tag="v6.5-rc1")
     sha["U"] = b.commit(ml, {"cleanup.c": "int cleanup;\n"}, "untagged io cleanup")
+    sha["V"] = b.commit(ml, {"other.c": "int other;\n"},
+                        'fix with unknown fixes\n\nFixes: 000000000000 ("nothing")\n')
 
     nxt = b.clone(ml, tmp / "next")
     tree = b.clone(ml, tree_path)

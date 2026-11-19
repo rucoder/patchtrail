@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:thr="http://purl.org/syndication/thread/1.0">
+<title>search</title>
+<entry><author><name>Me</name><email>me@example.org</email></author>
+<title>Re: FAILED: patch "[PATCH] fix io" failed to apply to 6.1-stable tree</title>
+<updated>2026-11-21T09:00:00Z</updated>
+<link href="https://lore.kernel.org/stable/reply-1@x/"/>
+<thr:in-reply-to href="https://lore.kernel.org/stable/2026112001-x@gregkh/" ref="2026112001-x@gregkh"/>
+</entry>
+<entry><author><name>Greg Kroah-Hartman</name><email>gregkh@linuxfoundation.org</email></author>
+<title>FAILED: patch "[PATCH] fix io" failed to apply to 6.1-stable tree</title>
+<updated>2026-11-20T10:00:00Z</updated>
+<link href="https://lore.kernel.org/stable/2026112001-x@gregkh/"/>
+</entry>
+<entry><author><name>Greg Kroah-Hartman</name><email>gregkh@linuxfoundation.org</email></author>
+<title>FAILED: patch "[PATCH] fix other" failed to apply to 6.3-stable tree</title>
+<updated>2026-11-20T11:00:00Z</updated>
+<link href="https://lore.kernel.org/stable/2026112002-y@gregkh/"/>
+</entry>
+<entry><author><name>Greg Kroah-Hartman</name><email>gregkh@linuxfoundation.org</email></author>
+<title>patch "fix io" added to stable-6.4 tree</title>
+<updated>2026-11-19T10:00:00Z</updated>
+<link href="https://lore.kernel.org/stable/2026111901-z@gregkh/"/>
+</entry>
+</feed>
