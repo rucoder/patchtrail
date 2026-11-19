@@ -107,3 +107,59 @@ def test_fetch_thread_error(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRAIL_B4", str(fake))
     with pytest.raises(LoreError, match="boom: no such thread"):
         fetch_thread("a@b")
+
+
+# --- lore as it really answers (final review C1, I4) ---------------------------
+
+FAILED_PAGE = (DATA / "lore-failed.atom").read_bytes()     # a real page, trimmed to 2 entries
+END_PAGE = (DATA / "lore-end.atom").read_bytes()           # lore's answer past the last result
+
+
+class PagedUrlopen:
+    """lore: the first page for a query, then `later` for every offset after it."""
+
+    def __init__(self, first, later):
+        self.first, self.later, self.urls = first, later, []
+
+    def __call__(self, req, timeout=None):
+        self.urls.append(req.full_url)
+        body = self.first if "&o=" not in req.full_url else self.later
+        if isinstance(body, int):
+            raise urllib.error.HTTPError(req.full_url, body, "err", {}, None)
+        return FakeResp(body)
+
+
+def test_lore_end_page_is_not_xml():
+    assert END_PAGE == b"</feed>"
+
+
+@pytest.mark.parametrize("later", [END_PAGE, 404, b"<html>oops", b'<?xml version="1.0"?>'
+                                   b'<feed xmlns="http://www.w3.org/2005/Atom"></feed>'],
+                         ids=["end-page", "404", "not-xml", "no-entries"])
+def test_search_ends_after_the_last_page(later):
+    op = PagedUrlopen(FAILED_PAGE, later)
+    got = search("stable", 's:"failed to apply to 5.4-stable tree"', urlopen=op)
+    assert [e.msgid for e in got] == ["2025012032-tidal-chatting-cba2@gregkh",
+                                      "2025011317-dallying-crock-6557@gregkh"]
+    assert len(op.urls) == 2 and op.urls[1].endswith("&o=2")
+
+
+@pytest.mark.parametrize("first", [END_PAGE, b"<html>oops", 500], ids=["end-page", "not-xml", "500"])
+def test_search_first_page_errors_raise(first):
+    with pytest.raises(LoreError):
+        search("stable", "s:x", urlopen=PagedUrlopen(first, END_PAGE))
+
+
+def test_search_later_page_server_error_raises():
+    with pytest.raises(LoreError, match="HTTP 503"):
+        search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, 503))
+
+
+def test_search_entry_fields_real_format():
+    [e, _] = search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, END_PAGE))
+    assert e.subject == ('FAILED: patch "[PATCH] cifs: support reconnect with alternate password'
+                         ' for SMB1" failed to apply to 5.4-stable tree')
+    assert (e.author, e.updated, e.is_reply) == ("gregkh@linuxfoundation.org",
+                                                 "2025-01-20T13:57:58Z", False)
+    assert e.href == "https://lore.kernel.org/stable/2025012032-tidal-chatting-cba2@gregkh/"
+

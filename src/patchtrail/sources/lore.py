@@ -86,25 +86,39 @@ def _parse_feed(data: bytes) -> list[Entry]:
 
 
 def search(inbox: str, query: str, *, urlopen=None) -> list[Entry]:
-    """All Atom search results for query, following pages until none is new."""
+    """All Atom search results for query, following pages until none is new.
+
+    A query without results answers 404. Past the last result lore answers 200
+    with the bare `</feed>`, which is not XML: after the first page, a 404, a
+    body without entries or one that does not parse ends the results."""
     base = f"{LORE}/{inbox}/?q={urllib.parse.quote(query)}&x=A"
     headers = {"User-Agent": f"patchtrail/{__version__}"}
     entries: list[Entry] = []
     seen: set[str] = set()
     fetched = 0
+    first = True
     while True:
         url = base + (f"&o={fetched}" if fetched else "")
         opener = urlopen or urllib.request.urlopen
         try:
             with opener(urllib.request.Request(url, headers=headers),
                         timeout=60) as r:
-                page = _parse_feed(r.read())
+                body = r.read()
         except urllib.error.HTTPError as e:
-            if e.code == 404 and not fetched:
-                return []
+            if e.code == 404:
+                return entries
             raise LoreError(f"lore search failed: HTTP {e.code}") from e
-        except (urllib.error.URLError, OSError, ET.ParseError) as e:
+        except (urllib.error.URLError, OSError) as e:
             raise LoreError(f"lore search failed: {e}") from e
+        if not first and b"<entry" not in body:
+            return entries
+        try:
+            page = _parse_feed(body)
+        except ET.ParseError as e:
+            if not first:
+                return entries
+            raise LoreError(f"lore search failed: {e}") from e
+        first = False
         new = [e for e in page if e.msgid not in seen]
         if not new:
             return entries

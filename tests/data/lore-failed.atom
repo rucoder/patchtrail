@@ -1,0 +1,242 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<feed
+xmlns="http://www.w3.org/2005/Atom"
+xmlns:thr="http://purl.org/syndication/thread/1.0"><title
+type="html">s:&#34;failed to apply to 5.4-stable tree&#34; AND d:20250101..20250201 - search results</title><link
+rel="alternate"
+type="text/html"
+href="https://lore.kernel.org/stable/?q=s:%22failed+to+apply+to+5.4-stable+tree%22+AND+d:20250101..20250201"/><link
+rel="self"
+href="https://lore.kernel.org/stable/?q=s:%22failed+to+apply+to+5.4-stable+tree%22+AND+d:20250101..20250201&amp;x=A"/><id>urn:uuid:7eedf8ee-dfb2-da04-3e52-de9a1fd9f4ff</id><updated>2026-11-19T17:15:45Z</updated><entry><author><name>gregkh</name><email>gregkh@linuxfoundation.org</email></author><title
+type="html">FAILED: patch &#34;[PATCH] cifs: support reconnect with alternate password for SMB1&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-20T13:57:58Z</updated><link
+href="https://lore.kernel.org/stable/2025012032-tidal-chatting-cba2@gregkh/"/><id>urn:uuid:e0f65b22-08fe-6f93-cbb0-e55ce8e024ee</id><content
+type="xhtml"><div
+xmlns="http://www.w3.org/1999/xhtml"><pre
+style="white-space:pre-wrap">
+The patch below does not apply to the 5.4-stable tree.
+If someone wants it applied there, or to any other stable or longterm
+tree, then please email the backport, including the original git commit
+id to &lt;stable@vger.kernel.org&gt;.
+
+To reproduce the conflict and resubmit, you may use the following commands:
+
+git fetch <a
+href="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/">https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/</a> linux-5.4.y
+git checkout FETCH_HEAD
+git cherry-pick -x b8ed9da102beb2d0926a1d7a7e652392190151c0
+# &lt;resolve conflicts, build, test, etc.&gt;
+git commit -s
+git send-email --to &#39;&lt;stable@vger.kernel.org&gt;&#39; --in-reply-to &#39;2025012032-tidal-chatting-cba2@gregkh&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
+
+Possible dependencies:
+
+
+
+thanks,
+
+greg k-h
+
+------------------ original commit in Linus&#39;s tree ------------------
+
+From b8ed9da102beb2d0926a1d7a7e652392190151c0 Mon Sep 17 00:00:00 2001
+From: Meetakshi Setiya &lt;msetiya@microsoft.com&gt;
+Date: Fri, 10 Jan 2025 07:10:27 -0500
+Subject: [PATCH] cifs: support reconnect with alternate password for SMB1
+
+SMB1 shares the mount and remount code paths with SMB2/3 and already
+supports password rotation in some scenarios. This patch extends the
+password rotation support to SMB1 reconnects as well.
+
+Cc: stable@vger.kernel.org
+Signed-off-by: Meetakshi Setiya &lt;msetiya@microsoft.com&gt;
+Signed-off-by: Steve French &lt;stfrench@microsoft.com&gt;
+
+<span
+class="head">diff --git a/fs/smb/client/cifssmb.c b/fs/smb/client/cifssmb.c
+index 6cb1e81993f8..ab0b949924d7 100644
+--- a/fs/smb/client/cifssmb.c
++++ b/fs/smb/client/cifssmb.c
+</span><span
+class="hunk">@@ -152,8 +152,17 @@ cifs_reconnect_tcon(struct cifs_tcon *tcon, int smb_command)
+</span> 	spin_unlock(&#38;ses-&gt;ses_lock);
+ 
+ 	rc = cifs_negotiate_protocol(0, ses, server);
+<span
+class="del">-	if (!rc)
+</span><span
+class="add">+	if (!rc) {
+</span> 		rc = cifs_setup_session(0, ses, server, ses-&gt;local_nls);
+<span
+class="add">+		if ((rc == -EACCES) || (rc == -EHOSTDOWN) || (rc == -EKEYREVOKED)) {
++			/*
++			 * Try alternate password for next reconnect if an alternate
++			 * password is available.
++			 */
++			if (ses-&gt;password2)
++				swap(ses-&gt;password2, ses-&gt;password);
++		}
++	}
+</span> 
+ 	/* do we need to reconnect tcon? */
+ 	if (rc || !tcon-&gt;need_reconnect) {
+
+</pre></div></content></entry><entry><author><name>gregkh</name><email>gregkh@linuxfoundation.org</email></author><title
+type="html">FAILED: patch &#34;[PATCH] usb: chipidea: ci_hdrc_imx: decrement device&#39;s refcount in&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-13T10:24:34Z</updated><link
+href="https://lore.kernel.org/stable/2025011317-dallying-crock-6557@gregkh/"/><id>urn:uuid:ad16b09e-9f62-1e28-04be-00826fcba65a</id><content
+type="xhtml"><div
+xmlns="http://www.w3.org/1999/xhtml"><pre
+style="white-space:pre-wrap">
+The patch below does not apply to the 5.4-stable tree.
+If someone wants it applied there, or to any other stable or longterm
+tree, then please email the backport, including the original git commit
+id to &lt;stable@vger.kernel.org&gt;.
+
+To reproduce the conflict and resubmit, you may use the following commands:
+
+git fetch <a
+href="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/">https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/</a> linux-5.4.y
+git checkout FETCH_HEAD
+git cherry-pick -x 74adad500346fb07d69af2c79acbff4adb061134
+# &lt;resolve conflicts, build, test, etc.&gt;
+git commit -s
+git send-email --to &#39;&lt;stable@vger.kernel.org&gt;&#39; --in-reply-to &#39;2025011317-dallying-crock-6557@gregkh&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
+
+Possible dependencies:
+
+
+
+thanks,
+
+greg k-h
+
+------------------ original commit in Linus&#39;s tree ------------------
+
+From 74adad500346fb07d69af2c79acbff4adb061134 Mon Sep 17 00:00:00 2001
+From: Joe Hattori &lt;joe@pf.is.s.u-tokyo.ac.jp&gt;
+Date: Mon, 16 Dec 2024 10:55:39 +0900
+Subject: [PATCH] usb: chipidea: ci_hdrc_imx: decrement device&#39;s refcount in
+ .remove() and in the error path of .probe()
+
+Current implementation of ci_hdrc_imx_driver does not decrement the
+refcount of the device obtained in usbmisc_get_init_data(). Add a
+put_device() call in .remove() and in .probe() before returning an
+error.
+
+This bug was found by an experimental static analysis tool that I am
+developing.
+
+Cc: stable &lt;stable@kernel.org&gt;
+Fixes: f40017e0f332 (&#34;chipidea: usbmisc_imx: Add USB support for VF610 SoCs&#34;)
+Signed-off-by: Joe Hattori &lt;joe@pf.is.s.u-tokyo.ac.jp&gt;
+Acked-by: Peter Chen &lt;peter.chen@kernel.org&gt;
+Link: <a
+href="https://lore.kernel.org/r/20241216015539.352579-1-joe@pf.is.s.u-tokyo.ac.jp">https://lore.kernel.org/r/20241216015539.352579-1-joe@pf.is.s.u-tokyo.ac.jp</a>
+Signed-off-by: Greg Kroah-Hartman &lt;gregkh@linuxfoundation.org&gt;
+
+<span
+class="head">diff --git a/drivers/usb/chipidea/ci_hdrc_imx.c b/drivers/usb/chipidea/ci_hdrc_imx.c
+index f2801700be8e..1a7fc638213e 100644
+--- a/drivers/usb/chipidea/ci_hdrc_imx.c
++++ b/drivers/usb/chipidea/ci_hdrc_imx.c
+</span><span
+class="hunk">@@ -370,25 +370,29 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
+</span> 		data-&gt;pinctrl = devm_pinctrl_get(dev);
+ 		if (PTR_ERR(data-&gt;pinctrl) == -ENODEV)
+ 			data-&gt;pinctrl = NULL;
+<span
+class="del">-		else if (IS_ERR(data-&gt;pinctrl))
+-			return dev_err_probe(dev, PTR_ERR(data-&gt;pinctrl),
+</span><span
+class="add">+		else if (IS_ERR(data-&gt;pinctrl)) {
++			ret = dev_err_probe(dev, PTR_ERR(data-&gt;pinctrl),
+</span> 					     &#34;pinctrl get failed\n&#34;);
+<span
+class="add">+			goto err_put;
++		}
+</span> 
+ 		data-&gt;hsic_pad_regulator =
+ 				devm_regulator_get_optional(dev, &#34;hsic&#34;);
+ 		if (PTR_ERR(data-&gt;hsic_pad_regulator) == -ENODEV) {
+ 			/* no pad regulator is needed */
+ 			data-&gt;hsic_pad_regulator = NULL;
+<span
+class="del">-		} else if (IS_ERR(data-&gt;hsic_pad_regulator))
+-			return dev_err_probe(dev, PTR_ERR(data-&gt;hsic_pad_regulator),
+</span><span
+class="add">+		} else if (IS_ERR(data-&gt;hsic_pad_regulator)) {
++			ret = dev_err_probe(dev, PTR_ERR(data-&gt;hsic_pad_regulator),
+</span> 					     &#34;Get HSIC pad regulator error\n&#34;);
+<span
+class="add">+			goto err_put;
++		}
+</span> 
+ 		if (data-&gt;hsic_pad_regulator) {
+ 			ret = regulator_enable(data-&gt;hsic_pad_regulator);
+ 			if (ret) {
+ 				dev_err(dev,
+ 					&#34;Failed to enable HSIC pad regulator\n&#34;);
+<span
+class="del">-				return ret;
+</span><span
+class="add">+				goto err_put;
+</span> 			}
+ 		}
+ 	}
+<span
+class="hunk">@@ -402,13 +406,14 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
+</span> 			dev_err(dev,
+ 				&#34;pinctrl_hsic_idle lookup failed, err=%ld\n&#34;,
+ 					PTR_ERR(pinctrl_hsic_idle));
+<span
+class="del">-			return PTR_ERR(pinctrl_hsic_idle);
+</span><span
+class="add">+			ret = PTR_ERR(pinctrl_hsic_idle);
++			goto err_put;
+</span> 		}
+ 
+ 		ret = pinctrl_select_state(data-&gt;pinctrl, pinctrl_hsic_idle);
+ 		if (ret) {
+ 			dev_err(dev, &#34;hsic_idle select failed, err=%d\n&#34;, ret);
+<span
+class="del">-			return ret;
+</span><span
+class="add">+			goto err_put;
+</span> 		}
+ 
+ 		data-&gt;pinctrl_hsic_active = pinctrl_lookup_state(data-&gt;pinctrl,
+<span
+class="hunk">@@ -417,7 +422,8 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
+</span> 			dev_err(dev,
+ 				&#34;pinctrl_hsic_active lookup failed, err=%ld\n&#34;,
+ 					PTR_ERR(data-&gt;pinctrl_hsic_active));
+<span
+class="del">-			return PTR_ERR(data-&gt;pinctrl_hsic_active);
+</span><span
+class="add">+			ret = PTR_ERR(data-&gt;pinctrl_hsic_active);
++			goto err_put;
+</span> 		}
+ 	}
+ 
+<span
+class="hunk">@@ -527,6 +533,8 @@ static int ci_hdrc_imx_probe(struct platform_device *pdev)
+</span> 	if (pdata.flags &#38; CI_HDRC_PMQOS)
+ 		cpu_latency_qos_remove_request(&#38;data-&gt;pm_qos_req);
+ 	data-&gt;ci_pdev = NULL;
+<span
+class="add">+err_put:
++	put_device(data-&gt;usbmisc_data-&gt;dev);
+</span> 	return ret;
+ }
+ 
+<span
+class="hunk">@@ -551,6 +559,7 @@ static void ci_hdrc_imx_remove(struct platform_device *pdev)
+</span> 		if (data-&gt;hsic_pad_regulator)
+ 			regulator_disable(data-&gt;hsic_pad_regulator);
+ 	}
+<span
+class="add">+	put_device(data-&gt;usbmisc_data-&gt;dev);
+</span> }
+ 
+ static void ci_hdrc_imx_shutdown(struct platform_device *pdev)
+
+</pre></div></content></entry></feed>
