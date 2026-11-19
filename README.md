@@ -46,10 +46,10 @@ Old script commands and their `ptl` counterparts:
 | `lkml-watch add NAME MSGID\|URL` | `ptl add NAME MSGID\|URL [--note TEXT] [--link URL]... [--json]`: for threads discovery can't find, and for scripts and AI agents. `--follow` marks someone else's thread as following. |
 | `lkml-watch rm` / `stable-watch rm` | `ptl hide NAME...` (and `unhide`); `ptl rm NAME...` deletes a patch and its history. |
 | `stable-watch status` | part of `ptl status` and `ptl fetch` |
-| `stable-watch check COMMIT...` | `ptl check COMMIT...`: one-off report, nothing stored |
+| `stable-watch check COMMIT...` | `ptl check [-v] COMMIT...`: one-off report, nothing stored |
 | `stable-watch add NAME [COMMIT] [TREE BRANCH]` | `ptl follow NAME [COMMIT] [TREE-URL BRANCH]`: a manual override of the automatic follow. With a new NAME and a COMMIT, it creates a "following" patch for that commit. `--stable` tracks stable without Cc: stable. |
 | `stable-watch backport NAME\|COMMIT SERIES [DIR]` | `ptl backport NAME\|COMMIT SERIES [DIR]` |
-| `-v` | `ptl ls -v` (every prerequisite, not only the first eight) |
+| `-v` | `ptl ls -v`, `ptl check -v` (every prerequisite, not only the first eight) |
 
 New commands:
 

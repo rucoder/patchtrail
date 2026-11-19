@@ -536,7 +536,8 @@ def cmd_check(args, conn, cfg, mine) -> int:
         if i:
             print()
         print(f"{(found.get('sha') or sha)[:12]} {found.get('subject') or ''}".rstrip())
-        _print(render.kernel_lines({k: frag[k] for k in ("commits", "branches", "failed", "hint")}))
+        _print(render.kernel_lines({k: frag[k] for k in ("commits", "branches", "failed", "hint")},
+                                   verbose=args.verbose))
     return 0
 
 
@@ -664,6 +665,7 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("watch", cmd_watch, "print new changes every 30 s; does not fetch")
     p = add("check", cmd_check, "where a commit stands in each stable branch")
     p.add_argument("commits", nargs="+", metavar="COMMIT")
+    p.add_argument("-v", "--verbose", action="store_true", help="every prerequisite")
     p = add("backport", cmd_backport, "a worktree to backport a fix by hand")
     p.add_argument("target", metavar="NAME|COMMIT")
     p.add_argument("series", metavar="SERIES")

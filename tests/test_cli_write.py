@@ -535,3 +535,32 @@ def test_commit_arguments_are_hashes(populated, conn, monkeypatch, capsys, cmd, 
     assert store.get_patch(conn, "someones-fix") is None
     assert store.commits(conn, store.get_patch(conn, "erofs")["id"]) == []
     assert not store.get_patch(conn, "erofs")["manual_applied"]
+
+
+def test_check_verbose_shows_every_prerequisite(populated, monkeypatch, capsys):  # final review M4
+    sha = "0123456789abcdef0123456789abcdef01234567"
+    prereqs = [{"sha": f"{i:040x}", "subject": f"io: change {i}", "tag": "v6.2", "cc": None,
+                "fixes": []} for i in range(10)]
+
+    class FakeTrail:
+        def __init__(self, paths, cfg):
+            pass
+
+        def prepare(self, patches, progress):
+            pass
+
+        def check_commits(self, shas, progress):
+            return [TrailResult(fragment={
+                "commits": [{"sha": sha, "subject": "io: fix", "where": "mainline",
+                             "stage": "released", "release": "v7.4-rc1", "stable": True,
+                             "cc": "", "fixes": []}],
+                "branches": {"6.1": {sha[:12]: {"state": "conflict", "tag": None, "prereqs": prereqs,
+                                                "detail": ["CONFLICT in io.c"]}}},
+                "failed": {}, "hint": None})]
+    monkeypatch.setattr("patchtrail.cli.KernelTrail", FakeTrail)
+    assert main(["check", sha]) == 0
+    out = capsys.readouterr().out
+    assert "io: change 7" in out and "io: change 8" not in out and "... 2 more (-v)" in out
+    assert main(["check", "-v", sha]) == 0
+    out = capsys.readouterr().out
+    assert "io: change 9" in out and "more (-v)" not in out
