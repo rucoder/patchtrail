@@ -190,3 +190,21 @@ def test_git_output_that_is_not_utf8(tmp_path):                  # final review 
     assert " /* (C) 1994 Andr\ufffd, latin-1 */\n-int io;\n+int io_fixed;\n" in diff
     blame = git.run("blame", "--porcelain", "-L", "1,+1", "HEAD", "--", "io.c")
     assert "\t/* (C) 1994 Andr\ufffd, latin-1 */" in blame
+
+
+def test_seed_with_an_existing_keep_is_left_alone(tmp_path, kfix, swclone):
+    # git leaves pack-X.keep while a fetch runs in the seed; the clone hardlinks it,
+    # so writing it would rewrite the seed's file.
+    [pack] = (swclone / "objects" / "pack").glob("*.pack")
+    keep = pack.with_suffix(".keep")
+    keep.write_text("seed's own keep\n")
+    import os
+    os.utime(keep, (1_000_000_000, 1_000_000_000))
+    before = (keep.read_bytes(), keep.stat().st_mtime_ns, keep.stat().st_ino)
+    r = KernelRepo(tmp_path / "linux.git"); r.ensure(swclone)
+    after = (keep.read_bytes(), keep.stat().st_mtime_ns, keep.stat().st_ino)
+    assert after == before
+    assert keep.stat().st_nlink == 2
+    assert (r.path / "objects" / "pack" / keep.name).exists()
+    assert all(p.with_suffix(".keep").exists()
+               for p in (r.path / "objects" / "pack").glob("pack-*.pack"))

@@ -108,7 +108,7 @@ def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> in
                 print(f"seeding from {seed} (hardlinks, no copy)")
             try:
                 KernelRepo(p.linux).ensure(seed)
-            except GitError as e:
+            except (GitError, OSError) as e:
                 shutil.rmtree(p.linux, ignore_errors=True)
                 what = f"seed from {seed}" if seed is not None else f"create {p.linux}"
                 print(f"ptl: cannot {what}: {e}", file=sys.stderr)

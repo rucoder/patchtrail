@@ -107,8 +107,14 @@ class KernelRepo(Git):
         if moves:
             self.run("update-ref", "--stdin", input="\n".join(moves) + "\n")
         # A .keep file leaves a pack out of every repack: the seed's packs stay shared.
+        # An existing .keep is a hardlink to the seed's own file (git leaves one while a
+        # fetch runs there): never open it for writing, that would rewrite the seed's file.
         for pack in (self.path / "objects" / "pack").glob("pack-*.pack"):
-            pack.with_suffix(".keep").write_text(f"patchtrail: hardlinked from {seed}\n")
+            try:
+                with open(pack.with_suffix(".keep"), "x") as f:
+                    f.write(f"patchtrail: hardlinked from {seed}\n")
+            except FileExistsError:
+                pass
         self.no_auto_gc()
 
     @staticmethod

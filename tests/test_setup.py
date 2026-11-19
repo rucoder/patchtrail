@@ -127,6 +127,21 @@ def test_failed_ensure_removes_partial_clone(kfix, monkeypatch, capsys):
     assert not paths().linux.exists()
 
 
+def test_oserror_while_seeding_fails_cleanly(kfix, monkeypatch, capsys):
+    from patchtrail.projects.kernel.repo import KernelRepo
+
+    def boom(self, seed):
+        self.path.mkdir(parents=True)
+        raise PermissionError("no way")
+
+    monkeypatch.setattr(KernelRepo, "ensure", boom)
+    assert run_setup(seed=kfix.mainline, no_seed=False, do_import=False) == 1
+    cap = capsys.readouterr()
+    assert "ptl: cannot seed from" in cap.err and "no way" in cap.err
+    assert "Traceback" not in cap.err + cap.out
+    assert not paths().linux.exists()
+
+
 def test_setup_twice_with_old_scripts(kfix, old_scripts_home, capsys):
     from patchtrail import snapshot
 
