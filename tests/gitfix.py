@@ -158,3 +158,31 @@ def make_kernel_fixture(tmp: Path) -> KernelFixture:
     urls = KernelUrls(mainline=ml.as_uri(), stable=st.as_uri(), queue=q.as_uri(),
                       next=nxt.as_uri(), releases=(DATA / "releases.json").as_uri())
     return KernelFixture(ml, st, q, nxt, tree, urls, sha, tree_url)
+
+
+@dataclass
+class UpstreamFixture:
+    url: str
+    sha: str
+
+
+def make_upstream_fixture(tmp: Path) -> UpstreamFixture:
+    """A small project: init (v1.0), then Me's `lib: follow symlinks ...` dated
+    2026-09-21, then a later commit (v1.1)."""
+    b = _Builder(tmp)
+    repo = b.init(tmp / "upstream")
+    b.commit(repo, {"README": "0\n"}, "init", tag="v1.0")
+    (repo / "lib.c").write_text("int lib;\n")
+    b.git(repo, "add", "lib.c")
+    date = "2026-09-21T12:00:00Z"
+    stamp = {"GIT_AUTHOR_NAME": ME[0], "GIT_AUTHOR_EMAIL": ME[1], "GIT_AUTHOR_DATE": date,
+             "GIT_COMMITTER_NAME": ME[0], "GIT_COMMITTER_EMAIL": ME[1], "GIT_COMMITTER_DATE": date}
+    b.git(repo, "commit", "-q", "-m", "lib: follow symlinks on intermediate tar path components",
+          env=stamp)
+    sha = b.git(repo, "rev-parse", "HEAD")
+    (repo / "README").write_text("1\n")
+    b.git(repo, "add", "README")
+    b.git(repo, "commit", "-q", "-m", "release 1.1",
+          env={k: v.replace("09-21", "10-01") for k, v in stamp.items()})
+    b.git(repo, "tag", "v1.1")
+    return UpstreamFixture(url=repo.as_uri(), sha=sha)

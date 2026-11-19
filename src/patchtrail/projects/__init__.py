@@ -14,7 +14,8 @@ DEFAULT_GIT = {
     "erofs-utils": {
         "repo": "https://git.kernel.org/pub/scm/linux/kernel/git/xiang/erofs-utils.git",
         "branch": "dev"},
-    "liburing": {"repo": "https://github.com/axboe/liburing.git", "branch": "master"},
+    "liburing": {"repo": "https://github.com/axboe/liburing.git", "branch": "master",
+                 "tags": "liburing-*"},
 }
 
 

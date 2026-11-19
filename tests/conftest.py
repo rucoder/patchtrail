@@ -144,3 +144,10 @@ def fake_search_from(path):
         return lore.search(inbox, query, urlopen=lambda req, timeout=None: _FileResponse(data))
 
     return search
+
+
+@pytest.fixture
+def upfix(tmp_path):
+    from gitfix import make_upstream_fixture
+
+    return make_upstream_fixture(tmp_path)
