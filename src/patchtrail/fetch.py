@@ -65,15 +65,16 @@ def last_run(conn) -> sqlite3.Row | None:
 
 # --- views --------------------------------------------------------------------
 
-def _below(mails: list[MailInfo], root: str) -> list[MailInfo]:
-    """The root and every mail below it through In-Reply-To, in the given order."""
+def _below(mails: list[MailInfo], root: str, stop: set[str]) -> list[MailInfo]:
+    """The root and every mail below it through In-Reply-To, in the given order,
+    not entering the threads of the stop msgids."""
     children: dict[str | None, list[str]] = {}
     for m in mails:
         children.setdefault(m.in_reply_to, []).append(m.msgid)
     seen, todo = {root}, [root]
     while todo:
         for c in children.get(todo.pop(), ()):
-            if c not in seen:
+            if c not in seen and c not in stop:
                 seen.add(c)
                 todo.append(c)
     return [m for m in mails if m.msgid in seen]
@@ -96,7 +97,8 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
             backports.setdefault(r["branch"], []).append(r["root_msgid"])
     newest_mails, subject, author, posted_at, files = mails, "", "", 0, {}
     if newest is not None:
-        newest_mails = _below(mails, newest["root_msgid"])
+        root = newest["root_msgid"]
+        newest_mails = _below(mails, root, {r["root_msgid"] for r in revs} - {root})
         author = newest["author"] or ""
         posted_at = newest["posted_at"] or 0
         own = [m for m in newest_mails if author and m.from_addr == author and not m.is_reply]
@@ -218,8 +220,9 @@ class _Run:
         want = {"subject": root.subject, "author": root.from_addr,
                 "posted_at": root.date or rev["posted_at"]}
         if rev["change_id"] is None:
-            # The root's own, else one from the author's mails below it, never one
-            # from the rest of the thread: that one names another series.
+            # The root's own, else one from the author's mails below it. Never one
+            # from the rest of the thread or from another revision's thread below
+            # (thread_mails stops there): that one names another series.
             below = (parse_mail(bytes(m["raw"])) for m in thread if m["msgid"] != root_id)
             want["change_id"] = root.change_id or next(
                 (m.change_id for m in below
@@ -268,9 +271,11 @@ class _Run:
                 fragment = _empty()
             else:
                 fragment, failed = self._follow(row, view, ready[row["project"]])
-            if view.prev_state is None and (failed or row["id"] in self.unfetched):
+            if (view.prev_state is None and row["read_on_first_snapshot"]
+                    and (failed or row["id"] in self.unfetched)):
                 # A first snapshot from half a run would use up read_on_first_snapshot,
-                # and the patch would flag once the rest arrives.
+                # and the patch would flag once the rest arrives. Other patches are
+                # unread until read anyway, so they record what there is.
                 self.progress.log(f"{row['name']}: first snapshot waits for a complete fetch")
                 continue
             state = compose_state(

@@ -170,29 +170,32 @@ def upsert_mails(conn, revision_id, raws, now) -> list[str]:
     return new
 
 
-# The given roots and every mail below them through In-Reply-To. A mail is stored
-# under the revision whose thread brought it first, so a revision posted as a reply
-# inside another thread finds its mails only this way.
-_BELOW = ("WITH RECURSIVE below(msgid) AS ({roots} UNION"
-          " SELECT m.msgid FROM mails m JOIN below b ON m.in_reply_to = b.msgid)")
+def _below(roots: str, stop: str) -> str:
+    """SQL for the stored mails of the given roots and of every mail below them
+    through In-Reply-To, by date, not entering the threads of the stop msgids."""
+    return ("WITH RECURSIVE below(msgid) AS (" + roots + " UNION"
+            " SELECT m.msgid FROM mails m JOIN below b ON m.in_reply_to = b.msgid"
+            " WHERE m.msgid NOT IN (" + stop + "))"
+            " SELECT m.* FROM mails m JOIN below USING (msgid) ORDER BY m.date, m.rowid")
 
 
 def thread_mails(conn, root_msgid):
-    """The root mail and every mail below it, wherever stored, by date."""
+    """The root mail and every mail below it, wherever stored, by date. The threads
+    of other revisions' roots below it are not part of it."""
     return conn.execute(
-        _BELOW.format(roots="SELECT ?")
-        + " SELECT m.* FROM mails m JOIN below USING (msgid) ORDER BY m.date, m.rowid",
-        (root_msgid,)).fetchall()
+        _below("SELECT ?", "SELECT root_msgid FROM revisions WHERE root_msgid != ?"),
+        (root_msgid, root_msgid)).fetchall()
 
 
 def patch_mails(conn, patch_id):
-    """The mails stored under the patch's revisions, and every mail below their
-    roots wherever stored, by date."""
+    """A patch's mails, by date: the root of each of its revisions and every mail
+    below it through In-Reply-To, wherever stored, but not the threads of another
+    patch's revisions. A mail is stored under the revision whose thread brought it
+    first, so that says nothing about whose it is."""
     return conn.execute(
-        _BELOW.format(roots="SELECT root_msgid FROM revisions WHERE patch_id=?")
-        + " SELECT m.* FROM mails m WHERE m.msgid IN (SELECT msgid FROM below)"
-        " OR m.revision_id IN (SELECT id FROM revisions WHERE patch_id=?)"
-        " ORDER BY m.date, m.rowid", (patch_id, patch_id)).fetchall()
+        _below("SELECT root_msgid FROM revisions WHERE patch_id=?",
+               "SELECT root_msgid FROM revisions WHERE patch_id != ?"),
+        (patch_id, patch_id)).fetchall()
 
 
 def mail_infos(conn, patch_id):

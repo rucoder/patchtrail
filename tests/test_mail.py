@@ -81,15 +81,17 @@ def test_upsert_mails_returns_only_new(conn):
     pid = store.add_patch(conn, "p", now=1)
     rid = store.add_revision(conn, pid, "a@x")
     assert store.upsert_mails(conn, rid, [make_mail("a@x")], now=5) == ["a@x"]
-    assert store.upsert_mails(conn, rid, [make_mail("a@x"), make_mail("b@x")], now=6) == ["b@x"]
+    assert store.upsert_mails(conn, rid, [make_mail("a@x"), make_mail("b@x", in_reply_to="a@x")],
+                              now=6) == ["b@x"]
     assert len(store.patch_mails(conn, pid)) == 2
 
 
 def test_mail_infos_sorted_by_date(conn):
     pid = store.add_patch(conn, "p", now=1)
     rid = store.add_revision(conn, pid, "a@x")
-    store.upsert_mails(conn, rid, [make_mail("late@x", date="Thu, 12 Nov 2026 12:00:00 +0000"),
-                                   make_mail("early@x")], now=5)
+    store.upsert_mails(conn, rid, [make_mail("late@x", date="Thu, 12 Nov 2026 12:00:00 +0000",
+                                             in_reply_to="a@x"),
+                                   make_mail("early@x", in_reply_to="a@x")], now=5)
     assert [m.msgid for m in store.mail_infos(conn, pid)] == ["early@x", "late@x"]
 
 

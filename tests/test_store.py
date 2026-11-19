@@ -109,7 +109,7 @@ def test_skips(conn):
     assert store.skips(conn, pid) == frozenset({"6.1", "5.15"})
 
 
-def test_thread_and_patch_mails_follow_replies_wherever_stored(conn):
+def test_thread_and_patch_mails_follow_replies_wherever_stored(conn):   # R24
     series = store.add_patch(conn, "series", now=1)
     rid = store.add_revision(conn, series, "s@x")
     fix = store.add_patch(conn, "fix", now=1)                    # posted as a reply in the series
@@ -119,7 +119,9 @@ def test_thread_and_patch_mails_follow_replies_wherever_stored(conn):
         make_mail("s@x", date=day.format(0)),
         make_mail("m@x", in_reply_to="s@x", date=day.format(1)),
         make_mail("s1@x", in_reply_to="s@x", date=day.format(2)),
-        make_mail("m1@x", in_reply_to="m@x", date=day.format(3))], 1)
+        make_mail("m1@x", in_reply_to="m@x", date=day.format(3)),
+        make_mail("x@x", date=day.format(4))], 1)                # stored there, in no thread
     assert [r["msgid"] for r in store.thread_mails(conn, "m@x")] == ["m@x", "m1@x"]
+    assert [r["msgid"] for r in store.thread_mails(conn, "s@x")] == ["s@x", "s1@x"]
     assert [r["msgid"] for r in store.patch_mails(conn, fix)] == ["m@x", "m1@x"]
-    assert [r["msgid"] for r in store.patch_mails(conn, series)] == ["s@x", "m@x", "s1@x", "m1@x"]
+    assert [r["msgid"] for r in store.patch_mails(conn, series)] == ["s@x", "s1@x"]
