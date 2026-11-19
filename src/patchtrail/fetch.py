@@ -65,33 +65,44 @@ def last_run(conn) -> sqlite3.Row | None:
 
 # --- views --------------------------------------------------------------------
 
+def _below(mails: list[MailInfo], root: str) -> list[MailInfo]:
+    """The root and every mail below it through In-Reply-To, in the given order."""
+    children: dict[str | None, list[str]] = {}
+    for m in mails:
+        children.setdefault(m.in_reply_to, []).append(m.msgid)
+    seen, todo = {root}, [root]
+    while todo:
+        for c in children.get(todo.pop(), ()):
+            if c not in seen:
+                seen.add(c)
+                todo.append(c)
+    return [m for m in mails if m.msgid in seen]
+
+
 def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
-    """The patch as the trails see it, and the mails of its newest series revision,
-    which drive its standing."""
+    """The patch as the trails see it, and the mails of its newest series revision
+    (its root and the mails below it), which drive its standing."""
     pid = row["id"]
     revs = store.revisions(conn, pid)
     series = [r for r in revs if r["kind"] == "series"]
     newest = series[-1] if series else None
-    authors = {r["id"]: r["author"] for r in revs}
-    mails, newest_mails, files = [], [], {}
+    raws, mails = {}, []
     for m in store.patch_mails(conn, pid):
-        raw = bytes(m["raw"])
-        info = parse_mail(raw)
-        mails.append(info)
-        if newest is not None and m["revision_id"] == newest["id"]:
-            newest_mails.append(info)
-        if not info.is_reply and info.from_addr and info.from_addr == authors[m["revision_id"]]:
-            files.update(dict.fromkeys(_DIFF_PATH.findall(text_body(raw)[0])))
+        raws[m["msgid"]] = bytes(m["raw"])
+        mails.append(parse_mail(raws[m["msgid"]]))
     backports: dict[str, list[str]] = {}
     for r in revs:
         if r["kind"] == "backport" and r["branch"]:
             backports.setdefault(r["branch"], []).append(r["root_msgid"])
-    subject, author, posted_at = "", "", 0
+    newest_mails, subject, author, posted_at, files = mails, "", "", 0, {}
     if newest is not None:
+        newest_mails = _below(mails, newest["root_msgid"])
         author = newest["author"] or ""
         posted_at = newest["posted_at"] or 0
-        subject = (head_subject([m for m in newest_mails if m.from_addr == author])
-                   or head_subject(newest_mails) or newest["subject"])
+        own = [m for m in newest_mails if author and m.from_addr == author and not m.is_reply]
+        subject = head_subject(own) or head_subject(newest_mails) or newest["subject"]
+        for m in own:
+            files.update(dict.fromkeys(_DIFF_PATH.findall(text_body(raws[m.msgid])[0])))
     prev = latest(conn, pid)
     tree = (row["tree_url"], row["tree_branch"]) if row["tree_url"] and row["tree_branch"] else None
     view = PatchView(
@@ -102,7 +113,7 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
         tree=tree, tree_source=row["tree_source"], force_stable=bool(row["force_stable"]),
         skips=store.skips(conn, pid), manual_applied=bool(row["manual_applied"]),
         backports=backports, prev_state=prev[2] if prev else None, files=tuple(files))
-    return view, newest_mails if newest is not None else mails
+    return view, newest_mails
 
 
 def build_view(conn, patch_row, mine: frozenset[str]) -> PatchView:
@@ -135,6 +146,8 @@ class _Run:
         self.source, self.trails, self.search, self.now = source, trails, search, now
         self.mine = my_addresses(cfg)
         self._built: dict[str, Trail | None] = {}
+        # Patches with a revision whose fetch failed and whose root mail is not stored.
+        self.unfetched: set[int] = set()
 
     def discover(self) -> None:
         self.progress.phase("discover")
@@ -153,16 +166,20 @@ class _Run:
         """Fetch every revision's thread; return the patches as they are afterwards."""
         revs = {row["id"]: store.revisions(self.conn, row["id"]) for row in rows}
         self.progress.phase("threads", sum(len(v) for v in revs.values()))
+        not_fetched = set()
         for row in rows:
-            roots: dict[int, MailInfo] = {}
             for rev in revs[row["id"]]:
                 self.progress.step(f"{row['name']} v{rev['version']}" if rev["kind"] == "series"
                                    else f"{row['name']} backport {rev['branch']}")
-                root = self._fetch(row, rev)
-                if root is not None:
-                    roots[rev["id"]] = root
+                if not self._fetch(row, rev):
+                    not_fetched.add(rev["id"])
+        # Second pass: a root mail may have come with any thread of this run.
+        for row in rows:
+            roots = {rev["id"]: self._sync(rev) for rev in revs[row["id"]]}
+            if any(roots[i] is None and i in not_fetched for i in roots):
+                self.unfetched.add(row["id"])
             series_roots = [roots[r["id"]] for r in revs[row["id"]]
-                            if r["kind"] == "series" and r["id"] in roots]
+                            if r["kind"] == "series" and roots[r["id"]] is not None]
             if series_roots and not row["project_override"]:
                 newest = series_roots[-1]
                 project = detect_project(newest.to_cc, newest.subject)
@@ -178,26 +195,37 @@ class _Run:
             ids |= {o["patch_id"] for o in owners if o is not None}
         return [p for p in store.list_patches(self.conn) if p["id"] in ids]
 
-    def _fetch(self, row, rev) -> MailInfo | None:
-        """Store the thread's mails; return its root mail, None if it is not there."""
+    def _fetch(self, row, rev) -> bool:
+        """Store the revision's thread; False if lore did not give it."""
         root_id = rev["root_msgid"]
         try:
             raws = self.source.fetch(root_id)
         except Exception as e:      # the patch keeps its stored mails and state
             self.progress.log(f"{row['name']}: cannot fetch <{root_id}>: {_why(e)}")
+            return False
+        store.upsert_mails(self.conn, rev["id"], raws, int(self.now()))
+        return True
+
+    def _sync(self, rev) -> MailInfo | None:
+        """Take the revision's subject, author, posted_at and change-id from its root
+        mail, wherever another thread stored it; return the root, None if not stored."""
+        root_id = rev["root_msgid"]
+        thread = store.thread_mails(self.conn, root_id)
+        raw = next((bytes(m["raw"]) for m in thread if m["msgid"] == root_id), None)
+        if raw is None:
             return None
-        new = store.upsert_mails(self.conn, rev["id"], raws, int(self.now()))
-        infos = sorted((parse_mail(raw) for raw in raws), key=lambda m: m.date)
-        root = next((m for m in infos if m.msgid == root_id), None)
-        fields = {}
-        if root is not None and root_id in new:
-            fields.update(subject=root.subject, author=root.from_addr,
-                          posted_at=root.date or rev["posted_at"])
+        root = parse_mail(raw)
+        want = {"subject": root.subject, "author": root.from_addr,
+                "posted_at": root.date or rev["posted_at"]}
         if rev["change_id"] is None:
-            change_id = next((m.change_id for m in infos if m.change_id), None)
-            if change_id:
-                fields["change_id"] = change_id
-        store.set_revision(self.conn, rev["id"], **fields)
+            # The root's own, else one from the author's mails below it, never one
+            # from the rest of the thread: that one names another series.
+            below = (parse_mail(bytes(m["raw"])) for m in thread if m["msgid"] != root_id)
+            want["change_id"] = root.change_id or next(
+                (m.change_id for m in below
+                 if m.change_id and root.from_addr and m.from_addr == root.from_addr), None)
+        store.set_revision(self.conn, rev["id"],
+                           **{k: v for k, v in want.items() if v != rev[k]})
         return root
 
     def _trail(self, project: str) -> Trail | None:
@@ -233,12 +261,18 @@ class _Run:
         for row in rows:
             self.progress.step(row["name"])
             view, standing_mails = loaded[row["id"]]
-            if row["project"] not in ready:
+            failed = row["project"] not in ready
+            if failed:
                 fragment = _previous(view)
             elif ready[row["project"]] is None:
                 fragment = _empty()
             else:
-                fragment = self._follow(row, view, ready[row["project"]])
+                fragment, failed = self._follow(row, view, ready[row["project"]])
+            if view.prev_state is None and (failed or row["id"] in self.unfetched):
+                # A first snapshot from half a run would use up read_on_first_snapshot,
+                # and the patch would flag once the rest arrives.
+                self.progress.log(f"{row['name']}: first snapshot waits for a complete fetch")
+                continue
             state = compose_state(
                 project=get_project(row["project"]),
                 standing=standing(standing_mails, self.mine,
@@ -248,14 +282,15 @@ class _Run:
             record(self.conn, row["id"], state, int(self.now()))
             self.conn.commit()
 
-    def _follow(self, row, view: PatchView, trail: Trail) -> dict:
+    def _follow(self, row, view: PatchView, trail: Trail) -> tuple[dict, bool]:
+        """The trail's fragment for the patch, and whether the trail failed."""
         try:
             result = trail.evaluate(view, self.progress)
         except Exception as e:
             self.progress.log(f"{row['name']}: cannot follow the trail: {_why(e)}")
-            return _previous(view)
+            return _previous(view), True
         self._store(row, result)
-        return result.fragment
+        return result.fragment, False
 
     def _store(self, row, result: TrailResult) -> None:
         pid = row["id"]

@@ -11,7 +11,7 @@ from patchtrail.fetch import Busy, DbProgress, build_view, last_run, run_fetch
 from patchtrail.projects.base import Trail, TrailResult
 from patchtrail.sources.base import Source
 from patchtrail.sources.lore import Entry, LoreError
-from conftest import raising
+from conftest import epoch, raising
 from mails import make_mail
 
 nosearch = lambda *a, **k: []  # noqa: E731
@@ -399,3 +399,92 @@ def test_mail_only_project_without_trail(conn, cfgp):
     state = snapshot.latest(conn, pid)[2]
     assert state["stage"] == "accepted" and state["standing"]["kind"] == "applied"
     assert {k: state[k] for k in ("commits", "branches", "failed", "hint")} == empty()
+
+
+# --- fix round 1 --------------------------------------------------------------
+
+def test_failed_first_fetch_postpones_the_first_snapshot(conn, cfgp):  # finding 1
+    entries = [E("a@x", "[PATCH] fix io")]
+    run_fetch(*cfgp, "cli", source=FakeSource({"a@x": LoreError("lore is down")}, entries),
+              trails={"kernel": FakeTrail()}, search=nosearch)
+    pid = store.get_patch(conn, "fix-io")["id"]
+    assert snapshot.latest(conn, pid) is None
+    good = FakeSource({"a@x": [make_mail("a@x"),
+                               make_mail("b@x", frm="X <x@y.org>", subject="Re: [PATCH] fix io",
+                                         in_reply_to="a@x")]}, entries)
+    run_fetch(*cfgp, "cli", source=good, trails={"kernel": FakeTrail()}, search=nosearch)
+    assert snapshot.latest(conn, pid)[2]["standing"]["kind"] == "your_turn"
+    assert not snapshot.unread(conn, pid)
+
+
+@pytest.mark.parametrize("broken", ["prepare", "evaluate"])
+def test_failed_first_trail_postpones_the_first_snapshot(conn, cfgp, broken):  # finding 1
+    src = FakeSource({"a@x": [make_mail("a@x")]}, [E("a@x", "[PATCH] fix io")])
+    trail = FakeTrail(**{f"{broken}_error": RuntimeError("clone died")})
+    run_fetch(*cfgp, "cli", source=src, trails={"kernel": trail}, search=nosearch)
+    pid = store.get_patch(conn, "fix-io")["id"]
+    assert snapshot.latest(conn, pid) is None
+    released = TrailResult(fragment={**empty(), "commits": [commit("c" * 40, stage="released")]})
+    run_fetch(*cfgp, "cli", source=src, trails={"kernel": FakeTrail(released)}, search=nosearch)
+    assert snapshot.latest(conn, pid)[2]["stage"] == "released"
+    assert not snapshot.unread(conn, pid)
+
+
+def overlapping_thread():
+    """v2 posted as a reply to v1: b4 returns all four mails for either root."""
+    return [
+        make_mail("a@x", subject="[PATCH] fix io", date="Mon, 09 Nov 2026 10:00:00 +0000"),
+        make_mail("b@x", subject="[PATCH v2] fix io", in_reply_to="a@x",
+                  date="Tue, 10 Nov 2026 10:00:00 +0000", body="---\n+++ b/io.c\n"),
+        make_mail("b1@x", frm="Y <y@y.org>", subject="Re: [PATCH v2] fix io", in_reply_to="b@x",
+                  date="Wed, 11 Nov 2026 10:00:00 +0000"),
+        make_mail("a1@x", frm="X <x@y.org>", subject="Re: [PATCH] fix io", in_reply_to="a@x",
+                  date="Thu, 12 Nov 2026 10:00:00 +0000", body="Reviewed-by: X <x@y.org>\n")]
+
+
+@pytest.mark.parametrize("fetched", [("a@x", "b@x"), ("a@x",), ("b@x",)])
+def test_v2_posted_in_the_v1_thread(conn, cfgp, fetched):         # finding 2
+    pid = store.add_patch(conn, "p", now=1)
+    store.add_revision(conn, pid, "a@x")                          # as `ptl add` leaves them
+    store.add_revision(conn, pid, "b@x", version=2)
+    src = FakeSource({root: overlapping_thread() for root in fetched})
+    run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    nov9, nov10 = epoch("2026-11-09") + 36000, epoch("2026-11-10") + 36000
+    assert [(r["subject"], r["author"], r["posted_at"]) for r in store.revisions(conn, pid)] == [
+        ("[PATCH] fix io", "me@example.org", nov9), ("[PATCH v2] fix io", "me@example.org", nov10)]
+    v = build_view(conn, store.patch_by_id(conn, pid), frozenset())
+    assert (v.subject, v.author, v.posted_at, v.files) == (
+        "[PATCH v2] fix io", "me@example.org", nov10, ("io.c",))
+    state = snapshot.latest(conn, pid)[2]
+    assert (state["standing"]["kind"], state["standing"]["who"], state["trailers"]) == (
+        "your_turn", "Y", [])
+    assert state["mails"] == ["a1@x", "a@x", "b1@x", "b@x"]
+
+
+def test_reply_posted_patch_keeps_its_identity(conn, cfgp):       # finding 3
+    series = store.add_patch(conn, "their-series", relation="following", now=1)
+    store.add_revision(conn, series, "s@x")
+    fix = store.add_patch(conn, "my-fix", now=1)                  # `ptl add`ed, sent in their thread
+    store.add_revision(conn, fix, "m@x")
+    thread = [
+        make_mail("s@x", frm="Them <them@y.org>", subject="[PATCH 0/2] mm: series",
+                  date="Mon, 09 Nov 2026 10:00:00 +0000", body="change-id: 20261101-mm-series\n"),
+        make_mail("m@x", subject="[PATCH] mm: fix on top", in_reply_to="s@x",
+                  date="Tue, 10 Nov 2026 10:00:00 +0000", body="---\n+++ b/mm/x.c\n"),
+        make_mail("m1@x", frm="X <x@y.org>", subject="Re: [PATCH] mm: fix on top",
+                  in_reply_to="m@x", date="Wed, 11 Nov 2026 10:00:00 +0000"),
+        make_mail("m2@x", frm="X <x@y.org>", subject="[PATCH] mm: alternative", in_reply_to="m@x",
+                  date="Tue, 10 Nov 2026 12:00:00 +0000", body="change-id: 20261105-alt\n"),
+        make_mail("s1@x", frm="Them <them@y.org>", subject="Re: [PATCH 0/2] mm: series",
+                  in_reply_to="s@x", date="Thu, 12 Nov 2026 10:00:00 +0000")]
+    src = FakeSource({"s@x": thread, "m@x": thread})
+    rid = run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    assert not any(l.startswith("merged: ") for l in log_lines(conn, rid))
+    assert store.revision_by_msgid(conn, "m@x")["patch_id"] == fix
+    assert store.revision_by_msgid(conn, "m@x")["change_id"] is None
+    assert store.revision_by_msgid(conn, "s@x")["change_id"] == "20261101-mm-series"
+    state = snapshot.latest(conn, fix)[2]
+    assert (state["standing"]["kind"], state["standing"]["who"]) == ("your_turn", "X")
+    assert state["mails"] == ["m1@x", "m2@x", "m@x"]
+    v = build_view(conn, store.patch_by_id(conn, fix), frozenset())
+    assert (v.subject, v.files) == ("[PATCH] mm: fix on top", ("mm/x.c",))

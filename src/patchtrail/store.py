@@ -170,11 +170,29 @@ def upsert_mails(conn, revision_id, raws, now) -> list[str]:
     return new
 
 
-def patch_mails(conn, patch_id):
+# The given roots and every mail below them through In-Reply-To. A mail is stored
+# under the revision whose thread brought it first, so a revision posted as a reply
+# inside another thread finds its mails only this way.
+_BELOW = ("WITH RECURSIVE below(msgid) AS ({roots} UNION"
+          " SELECT m.msgid FROM mails m JOIN below b ON m.in_reply_to = b.msgid)")
+
+
+def thread_mails(conn, root_msgid):
+    """The root mail and every mail below it, wherever stored, by date."""
     return conn.execute(
-        "SELECT m.* FROM mails m JOIN revisions r ON r.id = m.revision_id"
-        " WHERE r.patch_id=? ORDER BY m.date, m.rowid", (patch_id,)
-    ).fetchall()
+        _BELOW.format(roots="SELECT ?")
+        + " SELECT m.* FROM mails m JOIN below USING (msgid) ORDER BY m.date, m.rowid",
+        (root_msgid,)).fetchall()
+
+
+def patch_mails(conn, patch_id):
+    """The mails stored under the patch's revisions, and every mail below their
+    roots wherever stored, by date."""
+    return conn.execute(
+        _BELOW.format(roots="SELECT root_msgid FROM revisions WHERE patch_id=?")
+        + " SELECT m.* FROM mails m WHERE m.msgid IN (SELECT msgid FROM below)"
+        " OR m.revision_id IN (SELECT id FROM revisions WHERE patch_id=?)"
+        " ORDER BY m.date, m.rowid", (patch_id, patch_id)).fetchall()
 
 
 def mail_infos(conn, patch_id):
