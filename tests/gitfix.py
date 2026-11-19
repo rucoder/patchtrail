@@ -129,9 +129,10 @@ def make_kernel_fixture(tmp: Path) -> KernelFixture:
         b.git(st, "checkout", "-q", "-B", f"linux-6.{n}.y", f"v6.{n}")
         if n == 2:
             b.git(st, "cherry-pick", sha["F"], env=b._stamp(ME))
-            msg = b.git(st, "log", "-1", "--format=%B")
-            b.git(st, "commit", "-q", "--amend", "-m", f'commit {sha["F"]} upstream.\n\n{msg}\n',
-                  env=b._stamp(ME))
+            subject = b.git(st, "log", "-1", "--format=%s")
+            rest = b.git(st, "log", "-1", "--format=%b")
+            b.git(st, "commit", "-q", "--amend", "-m",
+                  f'{subject}\n\ncommit {sha["F"]} upstream.\n\n{rest}\n', env=b._stamp(ME))
             sha["F62"] = b.git(st, "rev-parse", "HEAD")
             b.git(st, "tag", "v6.2.1")
         else:

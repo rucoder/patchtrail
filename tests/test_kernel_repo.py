@@ -74,3 +74,13 @@ def test_scenario(fetched, kfix):
     assert fetched.resolve("refs/patchtrail/trees/-" + kfix.tree_url.split("file:///")[1].replace("/", "-")
                            + "/for-next") == s["G"]
     assert not fetched.is_ancestor(s["G"], MAINLINE)
+
+
+def test_backport_subject_and_body(fetched, kfix, queue):
+    f = kfix.sha["F"]
+    r = fetched
+    assert r.run("log", "-1", "--format=%s", kfix.sha["F62"]).strip() == "fix io"
+    assert f"commit {f} upstream." in r.run("log", "-1", "--format=%b", kfix.sha["F62"])
+    text = queue.patches("6.4")[0].text
+    assert "Subject: [PATCH] fix io" in text
+    assert f"commit {f} upstream." in text
