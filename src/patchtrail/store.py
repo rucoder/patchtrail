@@ -60,6 +60,19 @@ def add_revision(conn, patch_id, root_msgid, *, version=1, subject="", author=No
     return cur.lastrowid
 
 
+_REVISION_FIELDS = frozenset({"subject", "author", "posted_at", "change_id"})
+
+
+def set_revision(conn, revision_id, **fields):
+    bad = set(fields) - _REVISION_FIELDS
+    if bad:
+        raise ValueError(f"cannot set revision columns {sorted(bad)!r}")
+    if fields:
+        sets = ", ".join(f"{k}=?" for k in fields)
+        conn.execute(f"UPDATE revisions SET {sets} WHERE id=?", (*fields.values(), revision_id))
+        conn.commit()
+
+
 def revisions(conn, patch_id):
     return conn.execute(
         "SELECT * FROM revisions WHERE patch_id=? ORDER BY version, id", (patch_id,)
@@ -86,6 +99,33 @@ def commits(conn, patch_id):
     return conn.execute(
         "SELECT * FROM commits WHERE patch_id=? ORDER BY id", (patch_id,)
     ).fetchall()
+
+
+def _same_commit(a: str, b: str) -> bool:
+    """One hash is the other or an abbreviation of it."""
+    a, b = a.lower(), b.lower()
+    return bool(a and b) and (a.startswith(b) or b.startswith(a))
+
+
+def replace_commit(conn, patch_id, old_sha, new_sha, subject, source="search"):
+    """A stored commit was rebased: its row now names new_sha. If the patch already
+    has new_sha, the old row goes. Hashes match when one abbreviates the other."""
+    rows = commits(conn, patch_id)
+    old = [r for r in rows if _same_commit(r["sha"], old_sha)]
+    if not old:
+        return
+    if any(_same_commit(r["sha"], new_sha) for r in rows if r not in old):
+        conn.executemany("DELETE FROM commits WHERE id=?", [(r["id"],) for r in old])
+    else:
+        conn.execute("UPDATE commits SET sha=?, subject=?, source=? WHERE id=?",
+                     (new_sha, subject, source, old[0]["id"]))
+    conn.commit()
+
+
+def skips(conn, patch_id) -> frozenset[str]:
+    """The stable series the user won't backport this patch to."""
+    return frozenset(r[0] for r in conn.execute(
+        "SELECT series FROM branch_skips WHERE patch_id=?", (patch_id,)))
 
 
 def set_field(conn, patch_id, column, value):

@@ -67,3 +67,42 @@ def test_kv(conn):
     store.kv_set(conn, "k", "v")
     store.kv_set(conn, "k", "w")
     assert store.kv_get(conn, "k") == "w"
+
+
+def test_set_revision(conn):
+    pid = store.add_patch(conn, "p", now=1)
+    rid = store.add_revision(conn, pid, "a@x")
+    store.set_revision(conn, rid, subject="[PATCH] x", author="me@example.org", posted_at=5,
+                       change_id="20261111-x")
+    rev = store.revision_by_msgid(conn, "a@x")
+    assert (rev["subject"], rev["author"], rev["posted_at"], rev["change_id"]) == (
+        "[PATCH] x", "me@example.org", 5, "20261111-x")
+    with pytest.raises(ValueError):
+        store.set_revision(conn, rid, patch_id=7)
+
+
+def test_replace_commit_in_place(conn):
+    pid = store.add_patch(conn, "p", now=1)
+    store.set_commit(conn, pid, "a" * 12, "old", "applied-mail")
+    store.set_commit(conn, pid, "b" * 40, "other", "manual")
+    before = [r["id"] for r in store.commits(conn, pid)]
+    store.replace_commit(conn, pid, "a" * 40, "c" * 40, "rebased")   # stored short, named full
+    rows = store.commits(conn, pid)
+    assert [r["id"] for r in rows] == before
+    assert [(r["sha"], r["subject"], r["source"]) for r in rows] == [
+        ("c" * 40, "rebased", "search"), ("b" * 40, "other", "manual")]
+
+
+def test_replace_commit_onto_stored_commit(conn):
+    pid = store.add_patch(conn, "p", now=1)
+    store.set_commit(conn, pid, "a" * 40, "old", "search")
+    store.set_commit(conn, pid, "c" * 12, "new", "applied-mail")
+    store.replace_commit(conn, pid, "a" * 40, "c" * 40, "rebased")
+    assert [(r["sha"], r["subject"]) for r in store.commits(conn, pid)] == [("c" * 12, "new")]
+
+
+def test_skips(conn):
+    pid = store.add_patch(conn, "p", now=1)
+    assert store.skips(conn, pid) == frozenset()
+    conn.execute("INSERT INTO branch_skips VALUES (?, '6.1'), (?, '5.15')", (pid, pid))
+    assert store.skips(conn, pid) == frozenset({"6.1", "5.15"})
