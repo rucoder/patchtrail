@@ -169,6 +169,12 @@ def _reference(conn, patch_id):
     return _state_by_id(conn, row[0]) if row else None
 
 
+def reference_state(conn, patch_id: int) -> dict | None:
+    """The state the patch was last read at, None if never."""
+    ref = _reference(conn, patch_id)
+    return ref[1] if ref else None
+
+
 def unread(conn, patch_id: int) -> bool:
     if conn.execute("SELECT flagged FROM patches WHERE id=?", (patch_id,)).fetchone()[0]:
         return True

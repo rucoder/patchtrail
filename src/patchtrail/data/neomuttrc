@@ -1,0 +1,29 @@
+# Read-only neomutt viewer for patchtrail (`ptl open`): diff/patch
+# highlighting, no IMAP, no personal config (it runs neomutt -n -F <this> -R).
+#
+# Regexes are single-quoted so the backslashes reach the regex engine verbatim.
+set pager_index_lines = 6      # small message index above the pager
+set pager_stop                 # don't roll into the next message past the end
+unset markers                  # no '+' line-wrap markers (cleaner diffs)
+
+# --- mail headers ---
+color hdrdefault cyan          default
+color header     brightyellow  default '^(From|Subject):'
+
+# --- quoted text (reviewers quote the patch/changelog inline) ---
+color quoted     blue          default
+color quoted1    cyan          default
+color quoted2    green         default
+
+# --- diff / patch body ---
+color body brightwhite   default '^diff --git .*'
+color body brightwhite   default '^(index [0-9a-f]|new file mode|deleted file mode|old mode|new mode|similarity index|rename (from|to)) .*'
+color body brightblue    default '^(\-\-\-|\+\+\+) .*'
+color body brightcyan    default '^@@ .* @@.*'
+color body green         default '^\+[^+].*'
+color body green         default '^\+$'
+color body red           default '^-[^-].*'
+
+# --- changelog / review trailers ---
+color body brightmagenta default '^(Signed-off-by|Reviewed-by|Acked-by|Tested-by|Reported-by|Co-developed-by|Suggested-by|Reported-and-tested-by):'
+color body yellow        default '^(Fixes|Cc|Link|Closes|BugLink):'

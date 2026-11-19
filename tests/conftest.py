@@ -152,3 +152,82 @@ def upfix(tmp_path):
     from gitfix import make_upstream_fixture
 
     return make_upstream_fixture(tmp_path)
+
+
+# Task 14: a populated database for the reading commands.
+
+def _state(stage, mails, standing_text, *, commits=(), branches=None, failed=None):
+    return {"stage": stage, "closed": None, "closed_note": None,
+            "standing": {"kind": "new_reply", "who": "Jens Axboe", "since": 0,
+                         "text": standing_text},
+            "trailers": [], "mails": sorted(mails), "commits": list(commits),
+            "branches": branches or {}, "failed": failed or {}, "hint": None,
+            "finished": False}
+
+
+def _add_patch(conn, name, project, root_id, mails, *, subject, now):
+    from patchtrail import store
+
+    pid = store.add_patch(conn, name, project=project, now=now)
+    rev = store.add_revision(conn, pid, root_id, subject=subject, author="me@example.org",
+                             posted_at=now)
+    store.upsert_mails(conn, rev, mails, now)
+    return pid
+
+
+@pytest.fixture
+def populated(conn):
+    from mails import make_mail
+    from patchtrail import snapshot, store
+
+    now = epoch("2026-11-12")
+    root_mail = make_mail("iowq@x", subject="[PATCH] io_uring/io-wq: apply the current cpuset"
+                          " to new workers", to="linux-kernel@vger.kernel.org",
+                          date="Wed, 11 Nov 2026 10:00:00 +0000")
+    reply = make_mail("iowq-r1@x", frm="Jens Axboe <axboe@kernel.dk>", in_reply_to="iowq@x",
+                      subject="Re: [PATCH] io_uring/io-wq: apply the current cpuset to new workers",
+                      date="Thu, 12 Nov 2026 10:00:00 +0000", body="Applied, thanks!\n")
+    pid = _add_patch(conn, "iowq-cpuset", "kernel", "iowq@x", [root_mail, reply],
+                     subject="[PATCH] io_uring/io-wq: apply the current cpuset to new workers",
+                     now=now)
+    first = snapshot.record(conn, pid, _state("submitted", ["iowq@x"], "waiting for a reply"),
+                            epoch("2026-11-11"))
+    store.set_field(conn, pid, "read_snapshot_id", first)
+    snapshot.record(conn, pid, _state("accepted", ["iowq@x", "iowq-r1@x"],
+                                      "APPLIED by Jens Axboe, 2026-11-12"), now)
+    erofs = make_mail("erofs@x", subject="[PATCH] erofs-utils: fix a thing",
+                      to="linux-erofs@lists.ozlabs.org", date="Tue, 10 Nov 2026 10:00:00 +0000")
+    eid = _add_patch(conn, "erofs", "erofs-utils", "erofs@x", [erofs],
+                     subject="[PATCH] erofs-utils: fix a thing", now=now)
+    snap = snapshot.record(conn, eid, _state("submitted", ["erofs@x"], "waiting for a reply"), now)
+    store.set_field(conn, eid, "read_snapshot_id", snap)
+    conn.commit()
+    return conn
+
+
+@pytest.fixture
+def populated_kernel(populated):
+    from patchtrail import snapshot, store
+
+    pid = store.get_patch(populated, "iowq-cpuset")["id"]
+    sha = "0659e44ce739" + "0" * 28
+    st = snapshot.latest(populated, pid)[2]
+    na = {"state": "not_affected", "tag": None, "detail": ["no 84eacf177faa"], "prereqs": []}
+    cases = {"7.3": {"state": "released", "tag": "v7.3.2", "detail": [], "prereqs": []},
+             "6.12": {"state": "in_branch", "tag": None, "detail": [], "prereqs": []},
+             "6.6": {"state": "queued", "tag": None, "prereqs": [],
+                     "detail": ["queued for the next 6.6 release: queue-6.6/x.patch"]},
+             "6.1": {"state": "conflict", "tag": None, "prereqs": [
+                 {"sha": "a" * 40, "subject": "io_uring: earlier change", "tag": "v6.2",
+                  "cc": None, "fixes": []}],
+                     "detail": ["CONFLICT in io_uring/io-wq.c, after 2 queued patches to the "
+                                "same files: needs a backport by hand"]},
+             "5.15": na, "5.10": na}
+    st["commits"] = [{"sha": sha, "subject": "io_uring/io-wq: apply the current cpuset",
+                      "where": "mainline", "stage": "released", "release": "v7.4-rc1",
+                      "stable": True, "cc": "", "fixes": [
+                          {"sha": "84eacf177faa" + "0" * 28, "release": "v5.18", "known": True}]}]
+    st["branches"] = {s: {"0659e44ce739": e} for s, e in cases.items()}
+    snapshot.record(populated, pid, st, epoch("2026-11-13"))
+    populated.commit()
+    return populated
