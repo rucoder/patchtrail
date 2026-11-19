@@ -1,0 +1,11 @@
+{
+  "releases": [
+    {"moniker": "mainline", "version": "6.5-rc1", "iseol": false},
+    {"moniker": "stable", "version": "6.4.1", "iseol": false},
+    {"moniker": "stable", "version": "6.3.1", "iseol": false},
+    {"moniker": "longterm", "version": "6.2.1", "iseol": false},
+    {"moniker": "longterm", "version": "6.1.1", "iseol": false},
+    {"moniker": "longterm", "version": "6.0.1", "iseol": false},
+    {"moniker": "longterm", "version": "5.4.9", "iseol": true}
+  ]
+}
