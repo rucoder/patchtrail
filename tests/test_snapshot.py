@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from patchtrail import store
 from patchtrail.mail import Standing
 from patchtrail.projects import get_project

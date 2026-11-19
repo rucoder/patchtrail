@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Synthetic kernel repositories for tests, served over file://.
 
 Mainline history (one commit per day from 2026-01-02, oldest first):

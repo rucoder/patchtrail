@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The kernel trail: a patch's commits in the maintainer's tree, linux-next,
 mainline and every maintained stable branch."""
 

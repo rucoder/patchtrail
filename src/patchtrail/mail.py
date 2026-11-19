@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Parse mail and work out where a thread stands. Port of the mail half of lkml-watch."""
 
 import email

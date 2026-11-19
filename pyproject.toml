@@ -1,5 +1,6 @@
+# SPDX-License-Identifier: Apache-2.0
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +8,8 @@ name = "patchtrail"
 version = "0.1.0"
 description = "Track kernel patches and stable releases from the mailing lists"
 requires-python = ">=3.12"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
 dependencies = ["b4>=0.13"]
 
 [project.scripts]

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Find the user's patches on lore: new series, new versions, stable backports."""
 
 import re

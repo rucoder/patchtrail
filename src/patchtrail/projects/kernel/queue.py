@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The stable-queue: patches queued for the stable branches."""
 
 import re

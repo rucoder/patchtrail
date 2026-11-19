@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import pytest
 
 from patchtrail.projects.kernel.stable import branch_status, stable_tags

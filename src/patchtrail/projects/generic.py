@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Projects with no trail beyond the mailing list."""
 
 from patchtrail.projects.base import MAIL_ONLY, Project

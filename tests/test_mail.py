@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 from mails import make_mail, mbox
 
 from patchtrail import store

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Find a patch's commits past the list: the maintainer's "Applied" reply, a
 search by subject and author, and the trees MAINTAINERS names for its files."""
 

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Stages, the data a trail reads and returns, and the Project descriptor."""
 
 from abc import ABC, abstractmethod

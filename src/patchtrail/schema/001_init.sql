@@ -1,3 +1,4 @@
+-- SPDX-License-Identifier: Apache-2.0
 CREATE TABLE patches (
   id INTEGER PRIMARY KEY,
   name TEXT NOT NULL UNIQUE,

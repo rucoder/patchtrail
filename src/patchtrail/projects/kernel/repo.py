@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The kernel git repository: namespaced refs, release tags, first-release lookups."""
 
 import json

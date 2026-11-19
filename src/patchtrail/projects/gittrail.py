@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """The trail of a small project: find the patch in the project's own repository
 by subject and author, then the first release tag containing it."""
 

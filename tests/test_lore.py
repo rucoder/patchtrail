@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 import urllib.error
 from pathlib import Path
 

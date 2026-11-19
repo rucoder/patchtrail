@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Per-branch status of a mainline fix in the stable trees (port of stable-watch)."""
 
 import os

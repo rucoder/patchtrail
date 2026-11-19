@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """A worktree to backport a fix to a stable branch by hand (port of stable-watch backport)."""
 
 import subprocess

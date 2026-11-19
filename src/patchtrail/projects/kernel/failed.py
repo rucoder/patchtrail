@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """stable's "FAILED: patch ... failed to apply" mails (port of stable-watch)."""
 
 import re

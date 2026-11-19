@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """State snapshots, diffs between them, and the read/unread reference."""
 from __future__ import annotations
 

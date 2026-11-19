@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Project registry and detection from a patch's recipients."""
 
 from functools import partial

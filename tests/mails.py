@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Build realistic RFC 5322 mails and mboxrd files for tests."""
 
 import email.header

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Plain-SQL access to the patchtrail database. Every function takes conn first."""
 
 import re
