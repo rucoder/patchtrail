@@ -37,28 +37,36 @@ def test_default_config_loads_back():
     assert write_default_config(p, ["x@y.org"]) is False
 
 
-def test_setup_seeds_and_imports(kfix, old_scripts_home, capsys):
-    refs = lambda: subprocess.run(["git", "-C", str(kfix.mainline), "for-each-ref"],
-                                  capture_output=True, text=True).stdout
-    before = refs()
-    assert run_setup(seed=kfix.mainline, no_seed=False, do_import=None) == 0
+def test_setup_seeds_and_imports(swclone, old_scripts_home, capsys):
+    from conftest import tree_state
+
+    before = tree_state(swclone)
+    assert run_setup(seed=swclone, no_seed=False, do_import=None) == 0
     p = paths()
     assert p.config.exists() and (p.linux / "HEAD").exists()
     out = capsys.readouterr().out
-    assert f"seeding from {kfix.mainline} (hardlinks, no copy)" in out
+    assert f"seeding from {swclone} (hardlinks, no copy)" in out
     assert "ptl fetch" in out and "ptl status" in out
     assert store.list_patches(db.connect(p.db))                       # old threads imported
-    assert refs() == before
+    seeded = subprocess.run(["git", "-C", str(p.linux), "for-each-ref", "--format=%(refname)"],
+                            capture_output=True, text=True).stdout.split()
+    assert "refs/patchtrail/seed/refs/stable-watch/mainline" in seeded
+    assert tree_state(swclone) == before
     assert "me@example.org" in p.config.read_text()
 
 
 def test_setup_default_seed_from_state_dir(kfix, hermetic, capsys):
+    from gitfix import make_stable_watch_clone
+
     seed = hermetic / ".local" / "state" / "stable-watch" / "linux.git"
     seed.parent.mkdir(parents=True)
-    subprocess.run(["git", "clone", "-q", "--bare", str(kfix.mainline), str(seed)], check=True)
+    make_stable_watch_clone(kfix, seed)
     assert run_setup(seed=None, no_seed=False, do_import=None) == 0
     assert f"seeding from {seed}" in capsys.readouterr().out
     assert (paths().linux / "HEAD").exists()
+    seeded = subprocess.run(["git", "-C", str(paths().linux), "for-each-ref"],
+                            capture_output=True, text=True).stdout
+    assert "refs/patchtrail/seed/refs/stable-watch/linux-6.1.y" in seeded
 
 
 def test_setup_no_import_without_old_threads(kfix, capsys):

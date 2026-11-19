@@ -187,3 +187,22 @@ def make_upstream_fixture(tmp: Path) -> UpstreamFixture:
           env={k: v.replace("09-21", "10-01") for k, v in stamp.items()})
     b.git(repo, "tag", "v1.1")
     return UpstreamFixture(url=repo.as_uri(), sha=sha)
+
+
+def make_stable_watch_clone(kfix: KernelFixture, dest: Path) -> Path:
+    """A bare clone shaped like stable-watch's linux.git: fully packed, every ref
+    under refs/stable-watch/ (mainline, linux-X.Y.y, tags/), none under heads or tags."""
+    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+
+    def git(*args):
+        subprocess.run(["git", "-C", str(dest), *args], check=True, env=env, capture_output=True)
+
+    subprocess.run(["git", "init", "-q", "--bare", str(dest)], check=True, env=env)
+    git("fetch", "-q", "--no-tags", str(kfix.mainline),
+        "+refs/heads/master:refs/stable-watch/mainline", "+refs/tags/*:refs/stable-watch/tags/*")
+    git("fetch", "-q", "--no-tags", str(kfix.stable),
+        "+refs/heads/linux-*:refs/stable-watch/linux-*", "+refs/tags/*:refs/stable-watch/tags/*")
+    git("repack", "-q", "-a", "-d")
+    git("pack-refs", "--all")
+    git("commit-graph", "write", "--reachable")
+    return dest

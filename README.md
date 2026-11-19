@@ -81,8 +81,8 @@ git's `sendemail.from` and `user.email`.
 ## Coexistence with the old scripts
 
 patchtrail never writes to `~/bin`, `~/.config/{lkml,stable}-watch` or
-`~/.local/state/{lkml,stable}-watch`. The import only reads them, and seeding is a
-`git clone --bare` from the old `linux.git`, which leaves it untouched. Both tools can run
+`~/.local/state/{lkml,stable}-watch`. The import only reads them, and seeding is a local
+`git clone --mirror` from the old `linux.git`, which leaves it untouched. Both tools can run
 side by side until you retire the scripts.
 
 ## Registering patches from scripts and AI agents

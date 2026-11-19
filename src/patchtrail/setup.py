@@ -61,6 +61,28 @@ def _xdg(var: str, fallback: str) -> Path:
     return Path(os.environ.get(var) or Path.home() / fallback)
 
 
+def _seed(cfg, seed: Path | None, no_seed: bool) -> Path | None:
+    """The repository to seed from: --seed, else the config's seed, else
+    stable-watch's clone when there is one."""
+    if no_seed:
+        return None
+    if seed is None and cfg.seed:
+        seed = Path(cfg.seed).expanduser()
+    if seed is None:
+        default = _xdg("XDG_STATE_HOME", ".local/state") / "stable-watch" / "linux.git"
+        seed = default if default.is_dir() else None
+    return seed
+
+
+def _not_a_repo(seed: Path) -> str | None:
+    """Why seed cannot be cloned from, None if it can."""
+    if not seed.is_dir():
+        return "no such directory"
+    r = subprocess.run(["git", "-C", str(seed), "rev-parse", "--git-dir"],
+                       capture_output=True, text=True)
+    return (r.stderr.strip() or "not a git repository") if r.returncode else None
+
+
 def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> int:
     ok, msg = git_version_ok()
     if not ok:
@@ -68,22 +90,10 @@ def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> in
         return 1
     p = paths()
     cfg = load_config(p)
-    if not no_seed and seed is None:
-        default = _xdg("XDG_STATE_HOME", ".local/state") / "stable-watch" / "linux.git"
-        if cfg.seed:
-            seed = Path(cfg.seed).expanduser()
-        elif default.is_dir():
-            seed = default
-    if no_seed:
-        seed = None
-    seeding = seed is not None and not p.linux.exists()
-    if seeding:
-        r = subprocess.run(["git", "-C", str(seed), "rev-parse", "--git-dir"],
-                           capture_output=True, text=True)
-        if not seed.is_dir() or r.returncode:
-            why = r.stderr.strip() if seed.is_dir() else "no such directory"
-            print(f"ptl: cannot seed from {seed}: {why}", file=sys.stderr)
-            return 1
+    seed = None if p.linux.exists() else _seed(cfg, seed, no_seed)
+    if seed is not None and (why := _not_a_repo(seed)):
+        print(f"ptl: cannot seed from {seed}: {why}", file=sys.stderr)
+        return 1
     p.home.mkdir(parents=True, exist_ok=True)
     if write_default_config(p, sorted(my_addresses(cfg))):
         print(f"wrote {p.config}")
@@ -91,13 +101,14 @@ def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> in
     conn = db.connect(p.db)
     try:
         if not p.linux.exists():
-            if seeding:
+            if seed is not None:
                 print(f"seeding from {seed} (hardlinks, no copy)")
             try:
                 KernelRepo(p.linux).ensure(seed)
             except GitError as e:
                 shutil.rmtree(p.linux, ignore_errors=True)
-                print(f"ptl: cannot seed from {seed}: {e}", file=sys.stderr)
+                what = f"seed from {seed}" if seed is not None else f"create {p.linux}"
+                print(f"ptl: cannot {what}: {e}", file=sys.stderr)
                 return 1
         threads = _xdg("XDG_CONFIG_HOME", ".config") / "lkml-watch" / "threads"
         if do_import or (do_import is None and threads.exists()):

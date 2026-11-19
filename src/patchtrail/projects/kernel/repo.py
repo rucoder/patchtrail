@@ -81,15 +81,19 @@ class KernelRepo(Git):
         if not seed:
             self._plain(["git", "init", "-q", "--bare", str(self.path)])
             return
-        # A local clone hardlinks the seed's packs. Only its objects are wanted:
-        # its refs move under seed/ and go once the real remotes are fetched.
-        self._plain(["git", "clone", "-q", "--bare", str(seed), str(self.path)])
+        # A local clone hardlinks the seed's packs. --mirror takes every ref, not
+        # only heads and tags: stable-watch keeps all of its under refs/stable-watch/.
+        # Only the objects are wanted, but the refs make the first fetch send just
+        # what the seed lacks: they move under seed/ and go once the real remotes
+        # are fetched.
+        self._plain(["git", "clone", "-q", "--mirror", str(seed), str(self.path)])
         self.run("remote", "remove", "origin")
         moves = []
-        for line in filter(None, self.run("for-each-ref", "--format=%(objectname) %(refname)").split("\n")):
+        for line in self.run("for-each-ref", "--format=%(objectname) %(refname)").splitlines():
             oid, ref = line.split(" ", 1)
             moves += [f"create {REFS}/seed/{ref} {oid}", f"delete {ref}"]
-        self.run("update-ref", "--stdin", input="\n".join(moves) + "\n")
+        if moves:
+            self.run("update-ref", "--stdin", input="\n".join(moves) + "\n")
 
     @staticmethod
     def _plain(cmd: list[str]) -> None:

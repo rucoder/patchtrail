@@ -48,14 +48,43 @@ def test_fetch_releases_file_url(kfix):
     assert seen == ["https://x.org/r.json"]
 
 
-def test_seed_leaves_source_untouched(tmp_path, kfix):          # Review Focus 3
-    src = Git(kfix.mainline)
-    before = src.run("for-each-ref"), sorted(p.name for p in (kfix.mainline / ".git").iterdir())
-    r = KernelRepo(tmp_path / "linux.git"); r.ensure(kfix.mainline)
-    assert r.run("for-each-ref", "--format=%(refname)").split()[0].startswith("refs/patchtrail/seed/")
+def test_seed_from_a_stable_watch_clone(tmp_path, kfix, swclone):   # final review C2
+    from conftest import tree_state
+
+    before = tree_state(swclone)
+    assert before[0] and "refs/heads/" not in before[0] and "\trefs/tags/" not in before[0]
+    r = KernelRepo(tmp_path / "linux.git"); r.ensure(swclone)
+    refs = r.run("for-each-ref", "--format=%(refname)").split()
+    assert len(refs) == len(before[0].splitlines())
+    assert all(x.startswith("refs/patchtrail/seed/refs/stable-watch/") for x in refs)
+    assert r.resolve("refs/patchtrail/seed/refs/stable-watch/mainline") == kfix.sha["V"]
+    assert r.run("remote").strip() == ""
+    [pack] = (swclone / "objects" / "pack").glob("*.pack")
+    assert (r.path / "objects" / "pack" / pack.name).stat().st_ino == pack.stat().st_ino
     r.fetch(kfix.urls, ["6.1"], [], NullProgress())
     assert r.run("for-each-ref", "refs/patchtrail/seed/").strip() == ""
-    assert (src.run("for-each-ref"), sorted(p.name for p in (kfix.mainline / ".git").iterdir())) == before
+    assert r.resolve(MAINLINE) == kfix.sha["V"]
+    assert tree_state(swclone) == before
+
+
+def test_seed_with_refs_only_under_heads_and_tags(tmp_path, kfix):
+    from conftest import tree_state
+
+    before = tree_state(kfix.mainline / ".git")
+    r = KernelRepo(tmp_path / "linux.git"); r.ensure(kfix.mainline)
+    refs = r.run("for-each-ref", "--format=%(refname)").split()
+    assert "refs/patchtrail/seed/refs/heads/master" in refs
+    assert all(x.startswith("refs/patchtrail/seed/") for x in refs)
+    r.fetch(kfix.urls, ["6.1"], [], NullProgress())
+    assert r.run("for-each-ref", "refs/patchtrail/seed/").strip() == ""
+    assert tree_state(kfix.mainline / ".git") == before
+
+
+def test_seed_without_refs(tmp_path):
+    empty = tmp_path / "empty.git"
+    Git(tmp_path).run("init", "-q", "--bare", str(empty))
+    r = KernelRepo(tmp_path / "linux.git"); r.ensure(empty)
+    assert r.run("for-each-ref").strip() == ""
 
 
 def test_queue(tmp_path, kfix):

@@ -253,3 +253,23 @@ def old_scripts_home(hermetic):
     (state / "old-thread.mbox").write_bytes(mbox(raw))
     (state / "old-thread.seen").write_text("old1@x\n")
     return hermetic
+
+
+# Final review C2: a seed shaped like the real ~/.local/state/stable-watch/linux.git.
+
+@pytest.fixture
+def swclone(tmp_path, kfix):
+    from gitfix import make_stable_watch_clone
+
+    return make_stable_watch_clone(kfix, tmp_path / "stable-watch-linux.git")
+
+
+def tree_state(root):
+    """Every file under root with its mtime and contents, and every ref."""
+    import subprocess
+
+    files = {str(p.relative_to(root)): (p.stat().st_mtime_ns, p.read_bytes())
+             for p in sorted(root.rglob("*")) if p.is_file()}
+    refs = subprocess.run(["git", "-C", str(root), "for-each-ref"], capture_output=True,
+                          text=True, check=True).stdout
+    return refs, files
