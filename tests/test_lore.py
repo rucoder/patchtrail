@@ -139,8 +139,8 @@ def test_lore_end_page_is_not_xml():
 def test_search_ends_after_the_last_page(later):
     op = PagedUrlopen(FAILED_PAGE, later)
     got = search("stable", 's:"failed to apply to 5.4-stable tree"', urlopen=op)
-    assert [e.msgid for e in got] == ["2025012032-tidal-chatting-cba2@gregkh",
-                                      "2025011317-dallying-crock-6557@gregkh"]
+    assert [e.msgid for e in got] == ["2025012032-alpha-beta-0001@stable-bot",
+                                      "2025011317-gamma-delta-0002@stable-bot"]
     assert len(op.urls) == 2 and op.urls[1].endswith("&o=2")
 
 
@@ -157,11 +157,11 @@ def test_search_later_page_server_error_raises():
 
 def test_search_entry_fields_real_format():
     [e, _] = search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, END_PAGE))
-    assert e.subject == ('FAILED: patch "[PATCH] cifs: support reconnect with alternate password'
+    assert e.subject == ('FAILED: patch "[PATCH] foo: support reconnect with alternate password'
                          ' for SMB1" failed to apply to 5.4-stable tree')
-    assert (e.author, e.updated, e.is_reply) == ("gregkh@linuxfoundation.org",
+    assert (e.author, e.updated, e.is_reply) == ("stable-bot@example.org",
                                                  "2025-01-20T13:57:58Z", False)
-    assert e.href == "https://lore.kernel.org/stable/2025012032-tidal-chatting-cba2@gregkh/"
+    assert e.href == "https://lore.kernel.org/stable/2025012032-alpha-beta-0001@stable-bot/"
 
 
 def test_summary_is_the_text_of_lores_xhtml_content():
@@ -170,12 +170,12 @@ def test_summary_is_the_text_of_lores_xhtml_content():
     page = (DATA / "lore-stable-review.atom").read_bytes()
     [e] = search("stable", "s:x", urlopen=PagedUrlopen(page, END_PAGE))
     assert e.is_reply and e.subject.startswith("[PATCH 5.10 1840/1848] drm/msm/dp:")
-    assert "\ncommit 9051d629dbf7a998a40f7eac65a9512b01bc3bb8 upstream.\n" in e.summary
+    assert "\ncommit 1111111111111111111111111111111111111111 upstream.\n" in e.summary
     assert "Link: https://lore.kernel.org/r/1642531648-8448-5-git-send-email" in e.summary
     assert "+++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c" in e.summary and "<" not in e.summary[:40]
-    assert backport_of(e.subject, e.summary) == ("5.10", "9051d629dbf7a998a40f7eac65a9512b01bc3bb8")
+    assert backport_of(e.subject, e.summary) == ("5.10", "1111111111111111111111111111111111111111")
     [f, _] = search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, END_PAGE))
-    assert "git cherry-pick -x b8ed9da102beb2d0926a1d7a7e652392190151c0" in f.summary
+    assert "git cherry-pick -x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" in f.summary
 
 
 def test_fake_lore_pages_read_like_real_ones():

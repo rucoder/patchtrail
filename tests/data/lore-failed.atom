@@ -7,26 +7,26 @@ rel="alternate"
 type="text/html"
 href="https://lore.kernel.org/stable/?q=s:%22failed+to+apply+to+5.4-stable+tree%22+AND+d:20250101..20250201"/><link
 rel="self"
-href="https://lore.kernel.org/stable/?q=s:%22failed+to+apply+to+5.4-stable+tree%22+AND+d:20250101..20250201&amp;x=A"/><id>urn:uuid:7eedf8ee-dfb2-da04-3e52-de9a1fd9f4ff</id><updated>2026-11-19T17:15:45Z</updated><entry><author><name>gregkh</name><email>gregkh@linuxfoundation.org</email></author><title
-type="html">FAILED: patch &#34;[PATCH] cifs: support reconnect with alternate password for SMB1&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-20T13:57:58Z</updated><link
-href="https://lore.kernel.org/stable/2025012032-tidal-chatting-cba2@gregkh/"/><id>urn:uuid:e0f65b22-08fe-6f93-cbb0-e55ce8e024ee</id><content
+href="https://lore.kernel.org/stable/?q=s:%22failed+to+apply+to+5.4-stable+tree%22+AND+d:20250101..20250201&amp;x=A"/><id>urn:uuid:7eedf8ee-dfb2-da04-3e52-de9a1fd9f4ff</id><updated>2026-11-19T17:15:45Z</updated><entry><author><name>Stable Bot</name><email>stable-bot@example.org</email></author><title
+type="html">FAILED: patch &#34;[PATCH] foo: support reconnect with alternate password for SMB1&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-20T13:57:58Z</updated><link
+href="https://lore.kernel.org/stable/2025012032-alpha-beta-0001@stable-bot/"/><id>urn:uuid:e0f65b22-08fe-6f93-cbb0-e55ce8e024ee</id><content
 type="xhtml"><div
 xmlns="http://www.w3.org/1999/xhtml"><pre
 style="white-space:pre-wrap">
 The patch below does not apply to the 5.4-stable tree.
 If someone wants it applied there, or to any other stable or longterm
 tree, then please email the backport, including the original git commit
-id to &lt;stable@vger.kernel.org&gt;.
+id to &lt;stable@example.org&gt;.
 
 To reproduce the conflict and resubmit, you may use the following commands:
 
 git fetch <a
 href="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/">https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/</a> linux-5.4.y
 git checkout FETCH_HEAD
-git cherry-pick -x b8ed9da102beb2d0926a1d7a7e652392190151c0
+git cherry-pick -x aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # &lt;resolve conflicts, build, test, etc.&gt;
 git commit -s
-git send-email --to &#39;&lt;stable@vger.kernel.org&gt;&#39; --in-reply-to &#39;2025012032-tidal-chatting-cba2@gregkh&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
+git send-email --to &#39;&lt;stable@example.org&gt;&#39; --in-reply-to &#39;2025012032-alpha-beta-0001@stable-bot&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
 
 Possible dependencies:
 
@@ -38,18 +38,18 @@ greg k-h
 
 ------------------ original commit in Linus&#39;s tree ------------------
 
-From b8ed9da102beb2d0926a1d7a7e652392190151c0 Mon Sep 17 00:00:00 2001
-From: Meetakshi Setiya &lt;msetiya@microsoft.com&gt;
+From aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa Mon Sep 17 00:00:00 2001
+From: Dev One &lt;dev1@example.org&gt;
 Date: Fri, 10 Jan 2025 07:10:27 -0500
-Subject: [PATCH] cifs: support reconnect with alternate password for SMB1
+Subject: [PATCH] foo: support reconnect with alternate password for SMB1
 
 SMB1 shares the mount and remount code paths with SMB2/3 and already
 supports password rotation in some scenarios. This patch extends the
 password rotation support to SMB1 reconnects as well.
 
-Cc: stable@vger.kernel.org
-Signed-off-by: Meetakshi Setiya &lt;msetiya@microsoft.com&gt;
-Signed-off-by: Steve French &lt;stfrench@microsoft.com&gt;
+Cc: stable@example.org
+Signed-off-by: Dev One &lt;dev1@example.org&gt;
+Signed-off-by: Dev Two &lt;dev2@example.org&gt;
 
 <span
 class="head">diff --git a/fs/smb/client/cifssmb.c b/fs/smb/client/cifssmb.c
@@ -80,26 +80,26 @@ class="add">+		if ((rc == -EACCES) || (rc == -EHOSTDOWN) || (rc == -EKEYREVOKED)
  	/* do we need to reconnect tcon? */
  	if (rc || !tcon-&gt;need_reconnect) {
 
-</pre></div></content></entry><entry><author><name>gregkh</name><email>gregkh@linuxfoundation.org</email></author><title
-type="html">FAILED: patch &#34;[PATCH] usb: chipidea: ci_hdrc_imx: decrement device&#39;s refcount in&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-13T10:24:34Z</updated><link
-href="https://lore.kernel.org/stable/2025011317-dallying-crock-6557@gregkh/"/><id>urn:uuid:ad16b09e-9f62-1e28-04be-00826fcba65a</id><content
+</pre></div></content></entry><entry><author><name>Stable Bot</name><email>stable-bot@example.org</email></author><title
+type="html">FAILED: patch &#34;[PATCH] bar: widget: decrement device&#39;s refcount in&#34; failed to apply to 5.4-stable tree</title><updated>2025-01-13T10:24:34Z</updated><link
+href="https://lore.kernel.org/stable/2025011317-gamma-delta-0002@stable-bot/"/><id>urn:uuid:ad16b09e-9f62-1e28-04be-00826fcba65a</id><content
 type="xhtml"><div
 xmlns="http://www.w3.org/1999/xhtml"><pre
 style="white-space:pre-wrap">
 The patch below does not apply to the 5.4-stable tree.
 If someone wants it applied there, or to any other stable or longterm
 tree, then please email the backport, including the original git commit
-id to &lt;stable@vger.kernel.org&gt;.
+id to &lt;stable@example.org&gt;.
 
 To reproduce the conflict and resubmit, you may use the following commands:
 
 git fetch <a
 href="https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/">https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/</a> linux-5.4.y
 git checkout FETCH_HEAD
-git cherry-pick -x 74adad500346fb07d69af2c79acbff4adb061134
+git cherry-pick -x bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 # &lt;resolve conflicts, build, test, etc.&gt;
 git commit -s
-git send-email --to &#39;&lt;stable@vger.kernel.org&gt;&#39; --in-reply-to &#39;2025011317-dallying-crock-6557@gregkh&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
+git send-email --to &#39;&lt;stable@example.org&gt;&#39; --in-reply-to &#39;2025011317-gamma-delta-0002@stable-bot&#39; --subject-prefix &#39;PATCH 5.4.y&#39; HEAD^..
 
 Possible dependencies:
 
@@ -111,10 +111,10 @@ greg k-h
 
 ------------------ original commit in Linus&#39;s tree ------------------
 
-From 74adad500346fb07d69af2c79acbff4adb061134 Mon Sep 17 00:00:00 2001
-From: Joe Hattori &lt;joe@pf.is.s.u-tokyo.ac.jp&gt;
+From bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb Mon Sep 17 00:00:00 2001
+From: Dev Three &lt;dev3@example.org&gt;
 Date: Mon, 16 Dec 2024 10:55:39 +0900
-Subject: [PATCH] usb: chipidea: ci_hdrc_imx: decrement device&#39;s refcount in
+Subject: [PATCH] bar: widget: decrement device&#39;s refcount in
  .remove() and in the error path of .probe()
 
 Current implementation of ci_hdrc_imx_driver does not decrement the
@@ -122,16 +122,15 @@ refcount of the device obtained in usbmisc_get_init_data(). Add a
 put_device() call in .remove() and in .probe() before returning an
 error.
 
-This bug was found by an experimental static analysis tool that I am
-developing.
+This bug was found by a static analysis tool.
 
-Cc: stable &lt;stable@kernel.org&gt;
-Fixes: f40017e0f332 (&#34;chipidea: usbmisc_imx: Add USB support for VF610 SoCs&#34;)
-Signed-off-by: Joe Hattori &lt;joe@pf.is.s.u-tokyo.ac.jp&gt;
-Acked-by: Peter Chen &lt;peter.chen@kernel.org&gt;
+Cc: stable &lt;stable@example.org&gt;
+Fixes: 333333333333 (&#34;chipidea: usbmisc_imx: Add USB support for VF610 SoCs&#34;)
+Signed-off-by: Dev Three &lt;dev3@example.org&gt;
+Acked-by: Dev Four &lt;dev4@example.org&gt;
 Link: <a
-href="https://lore.kernel.org/r/20241216015539.352579-1-joe@pf.is.s.u-tokyo.ac.jp">https://lore.kernel.org/r/20241216015539.352579-1-joe@pf.is.s.u-tokyo.ac.jp</a>
-Signed-off-by: Greg Kroah-Hartman &lt;gregkh@linuxfoundation.org&gt;
+href="https://lore.kernel.org/r/20241216015539.352579-1-dev3@example.org">https://lore.kernel.org/r/20241216015539.352579-1-dev3@example.org</a>
+Signed-off-by: Stable Bot &lt;stable-bot@example.org&gt;
 
 <span
 class="head">diff --git a/drivers/usb/chipidea/ci_hdrc_imx.c b/drivers/usb/chipidea/ci_hdrc_imx.c
