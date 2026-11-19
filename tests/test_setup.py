@@ -145,3 +145,13 @@ def test_setup_twice_with_old_scripts(kfix, old_scripts_home, capsys):
     assert run_setup(seed=None, no_seed=True, do_import=None) == 0
     assert counts() == first
     assert "nothing new to import (1 already tracked)" in capsys.readouterr().out
+
+
+def test_setup_without_git(tmp_path, monkeypatch, capsys):        # final review M6
+    (tmp_path / "bin").mkdir()
+    monkeypatch.setenv("PATH", str(tmp_path / "bin"))
+    assert git_version_ok() == (False, "patchtrail needs git >= 2.40 (found none)")
+    assert run_setup(seed=None, no_seed=True, do_import=False) == 1
+    cap = capsys.readouterr()
+    assert cap.err == "patchtrail needs git >= 2.40 (found none)\n" and "Traceback" not in cap.out
+    assert not paths().home.exists()

@@ -20,7 +20,10 @@ MIN_GIT = (2, 40)
 def git_version_ok(out: str | None = None) -> tuple[bool, str]:
     """(ok, version) from `git --version`; on failure the second item is the message."""
     if out is None:
-        out = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout
+        try:
+            out = subprocess.run(["git", "--version"], capture_output=True, text=True).stdout
+        except OSError:             # no git on PATH
+            out = ""
     m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", out)
     if not m:
         return False, f"patchtrail needs git >= 2.40 (found {out.strip() or 'none'})"
