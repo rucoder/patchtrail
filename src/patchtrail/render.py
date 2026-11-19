@@ -164,7 +164,8 @@ def status_lines(conn, names: list[str], *, mine: frozenset[str] = frozenset()) 
     if names:
         rows = [store.get_patch(conn, n) for n in names]
     else:
-        rows = [r for r in store.list_patches(conn) if snapshot.unread(conn, r["id"])]
+        rows = [r for r in store.list_patches(conn, closed=True)
+                if snapshot.unread(conn, r["id"])]
     if not rows:
         return ["nothing unread"]
     rows = by_activity(conn, rows)

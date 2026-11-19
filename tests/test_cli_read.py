@@ -196,3 +196,23 @@ def test_summary_optional_links_and_note(populated, capsys):
     assert main(["ls", "erofs"]) == 0
     out = capsys.readouterr().out
     assert "  links: PR #3 https://github.com/o/r/pull/3" in out and "  note: ping in a week" in out
+
+
+def test_status_includes_closed_not_hidden(populated, capsys):
+    from patchtrail import snapshot
+
+    for name, col, val in (("erofs", "closed", "moved"), ("iowq-cpuset", "hidden", 1)):
+        store.set_field(populated, store.get_patch(populated, name)["id"], col, val)
+    eid = store.get_patch(populated, "erofs")["id"]
+    st = snapshot.latest(populated, eid)[2]
+    snapshot.record(populated, eid, {**st, "closed": "moved"}, epoch("2026-11-14"))
+    populated.commit()
+    assert main(["status"]) == 0
+    out = capsys.readouterr().out
+    assert "erofs" in out and "closed: – → moved" in out and "iowq-cpuset" not in out
+
+
+def test_status_fetch_validates_names_first(populated, capsys, monkeypatch):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", boom)
+    assert main(["status", "--fetch", "nope"]) == 1
+    assert "ptl: not tracked: nope" in capsys.readouterr().err

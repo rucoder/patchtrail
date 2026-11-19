@@ -34,6 +34,8 @@ def _print(lines: list[str]) -> None:
 
 
 def cmd_status(args, conn, cfg, mine) -> int:
+    if args.names:
+        _patches(conn, args.names)
     if args.fetch:
         try:
             run_fetch(paths(), cfg, "cli", patch_names=args.names or None)
@@ -41,8 +43,6 @@ def cmd_status(args, conn, cfg, mine) -> int:
             r = e.run
             detail = f" (run {r['id']}, {r['phase']} {r['step']}/{r['steps']})" if r else ""
             raise CliError(f"a fetch is already running{detail}") from e
-    if args.names:
-        _patches(conn, args.names)
     _print(render.status_lines(conn, args.names, mine=mine))
     return 0
 
