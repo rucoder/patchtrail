@@ -6,12 +6,18 @@ import sqlite3
 from importlib import resources
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+
+# Where the migrations are read from; None means the package's schema directory.
+# Tests point it at a directory of their own.
+MIGRATIONS: Path | None = None
 
 
 def _migrations() -> list[tuple[int, str]]:
     found = []
-    for entry in resources.files("patchtrail").joinpath("schema").iterdir():
+    base = Path(MIGRATIONS) if MIGRATIONS is not None else resources.files(
+        "patchtrail").joinpath("schema")
+    for entry in base.iterdir():
         m = re.fullmatch(r"(\d+)_.*\.sql", entry.name)
         if m:
             found.append((int(m.group(1)), entry.read_text(encoding="utf-8")))
@@ -28,8 +34,16 @@ def connect(path: Path) -> sqlite3.Connection:
     current = conn.execute("PRAGMA user_version").fetchone()[0]
     for version, sql in _migrations():
         if version > current:
-            conn.executescript(sql)
-            conn.execute(f"PRAGMA user_version={int(version)}")
+            # One transaction per migration, with its version: a failure leaves
+            # the database at the previous version. executescript commits on its
+            # own, so the transaction is in the script.
+            try:
+                conn.executescript(f"BEGIN;\n{sql}\nPRAGMA user_version={int(version)};\nCOMMIT;")
+            except sqlite3.Error:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                conn.close()
+                raise
             current = version
     conn.commit()
     return conn

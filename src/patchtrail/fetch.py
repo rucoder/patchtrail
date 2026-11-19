@@ -3,6 +3,7 @@
 project's trail fetch its repos once and follow each patch, and record a snapshot
 of every patch whose state changed. Progress goes to the runs and run_log tables."""
 
+import contextlib
 import dataclasses
 import fcntl
 import os
@@ -35,7 +36,8 @@ class Busy(Exception):
 class DbProgress(Progress):
     """Progress of one run, kept in runs.phase/step/steps and in run_log lines."""
 
-    def __init__(self, conn, run_id: int, now=time.time):
+    def __init__(self, conn, run_id: int, now=time.time, echo=None):
+        self.echo = echo        # called with every log line, e.g. to print it
         self.conn = conn
         self.run_id = run_id
         self.now = now
@@ -58,6 +60,8 @@ class DbProgress(Progress):
         self.conn.execute("INSERT INTO run_log (run_id, at, line) VALUES (?,?,?)",
                           (self.run_id, int(self.now()), line))
         self.conn.commit()
+        if self.echo is not None:
+            self.echo(line)
 
 
 def last_run(conn) -> sqlite3.Row | None:
@@ -353,21 +357,47 @@ def _finish(conn, run_id: int, status: str, now: int, error: str | None = None) 
     conn.commit()
 
 
+@contextlib.contextmanager
+def locked(paths: Paths, conn):
+    """Hold the fetch lock; raise Busy, with the running run's row, when another
+    process holds it. conn only reads that row."""
+    fd = os.open(paths.lock, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            raise Busy(conn.execute("SELECT * FROM runs WHERE status='running'"
+                                    " ORDER BY id DESC LIMIT 1").fetchone()) from None
+        yield
+    finally:
+        os.close(fd)                # releases the lock
+
+
+def reevaluate(conn, paths: Paths, cfg: Config, patch_id: int) -> int | None:
+    """Record the patch's state again from its stored mails, the changes made by hand
+    and the trail fragment of its last snapshot. No network. Returns the new snapshot's
+    id, None if nothing changed or if the patch has no snapshot yet and is waiting for
+    its first complete fetch."""
+    row = store.patch_by_id(conn, patch_id)
+    view, _ = _load(conn, row)
+    if view.prev_state is None and row["read_on_first_snapshot"]:
+        return None
+    state = compose_for(conn, row, my_addresses(cfg), _previous(view))
+    snap = record(conn, patch_id, state, int(time.time()))
+    conn.commit()
+    return snap
+
+
 def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=None, search=None,
               now=time.time, patch_names: list[str] | None = None,
-              discover_new: bool = True) -> int:
-    """One fetch run; returns its id. Raises Busy when another run holds the lock."""
+              discover_new: bool = True, echo=None) -> int:
+    """One fetch run; returns its id. Raises Busy when another run holds the lock.
+    echo is called with each progress line as it is logged."""
     source = LoreSource() if source is None else source
     search = lore.search if search is None else search
     conn = db.connect(paths.db)
     try:
-        fd = os.open(paths.lock, os.O_CREAT | os.O_RDWR, 0o644)
-        try:
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise Busy(conn.execute("SELECT * FROM runs WHERE status='running'"
-                                        " ORDER BY id DESC LIMIT 1").fetchone()) from None
+        with locked(paths, conn):
             # The lock proves that no process runs these any more.
             conn.execute("UPDATE runs SET status='interrupted', finished_at=?"
                          " WHERE status='running'", (int(now()),))
@@ -375,7 +405,7 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
                                   " VALUES (?,?,?,'running')",
                                   (os.getpid(), trigger, int(now()))).lastrowid
             conn.commit()
-            progress = DbProgress(conn, run_id, now)
+            progress = DbProgress(conn, run_id, now, echo)
             try:
                 run = _Run(conn, paths, cfg, progress, source=source, trails=trails,
                            search=search, now=now)
@@ -396,7 +426,5 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
                 raise
             _finish(conn, run_id, "ok", int(now()))
             return run_id
-        finally:
-            os.close(fd)                # releases the lock
     finally:
         conn.close()

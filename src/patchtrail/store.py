@@ -9,12 +9,16 @@ _NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
 _FIELDS = frozenset(
     "name project project_override relation hidden closed closed_note "
     "manual_applied force_stable tree_url tree_branch tree_source "
-    "read_snapshot_id prev_read_snapshot_id flagged read_on_first_snapshot".split()
+    "read_snapshot_id prev_read_snapshot_id flagged read_on_first_snapshot note".split()
 )
 
 
+def valid_name(name: str) -> bool:
+    return _NAME_RE.fullmatch(name) is not None
+
+
 def add_patch(conn, name, *, relation="mine", project="unknown", now) -> int:
-    if not _NAME_RE.fullmatch(name):
+    if not valid_name(name):
         raise ValueError(f"invalid patch name: {name!r}")
     try:
         cur = conn.execute(
@@ -141,6 +145,29 @@ def set_field(conn, patch_id, column, value):
         raise ValueError(f"cannot set column {column!r}")
     conn.execute(f"UPDATE patches SET {column}=? WHERE id=?", (value, patch_id))
     conn.commit()
+
+
+def add_links(conn, patch_id, urls, now) -> list[str]:
+    """Attach URLs (a PR, a Jira issue) to the patch; return the ones that were new."""
+    new = []
+    for url in dict.fromkeys(urls):
+        cur = conn.execute("INSERT OR IGNORE INTO links (patch_id, url, added_at) VALUES (?,?,?)",
+                           (patch_id, url, now))
+        if cur.rowcount:
+            new.append(url)
+    conn.commit()
+    return new
+
+
+def remove_links(conn, patch_id, urls):
+    conn.executemany("DELETE FROM links WHERE patch_id=? AND url=?",
+                     [(patch_id, u) for u in urls])
+    conn.commit()
+
+
+def links(conn, patch_id) -> list[str]:
+    return [r[0] for r in conn.execute(
+        "SELECT url FROM links WHERE patch_id=? ORDER BY added_at, rowid", (patch_id,))]
 
 
 def kv_get(conn, key):

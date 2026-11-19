@@ -187,12 +187,9 @@ def test_prereqs_limited_unless_verbose():
 
 
 def test_summary_optional_links_and_note(populated, capsys):
-    populated.execute("CREATE TABLE links (patch_id INTEGER, url TEXT)")
-    populated.execute("ALTER TABLE patches ADD COLUMN note TEXT")
     pid = store.get_patch(populated, "erofs")["id"]
-    populated.execute("INSERT INTO links VALUES (?, 'https://github.com/o/r/pull/3')", (pid,))
-    populated.execute("UPDATE patches SET note='ping in a week' WHERE id=?", (pid,))
-    populated.commit()
+    store.add_links(populated, pid, ["https://github.com/o/r/pull/3"], 1)
+    store.set_field(populated, pid, "note", "ping in a week")
     assert main(["ls", "erofs"]) == 0
     out = capsys.readouterr().out
     assert "  links: PR #3 https://github.com/o/r/pull/3" in out and "  note: ping in a week" in out

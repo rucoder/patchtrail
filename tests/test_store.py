@@ -7,7 +7,7 @@ from mails import make_mail
 
 
 def test_schema_and_pragmas(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 1
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
     assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
     assert conn.execute("PRAGMA foreign_keys").fetchone()[0] == 1
 
@@ -31,7 +31,7 @@ def test_delete_cascades(conn):
 def test_reconnect_keeps_version(tmp_path):
     p = paths()
     db.connect(p.db).close()
-    assert db.connect(p.db).execute("PRAGMA user_version").fetchone()[0] == 1
+    assert db.connect(p.db).execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION
 
 
 def test_list_patches_filters(conn):
