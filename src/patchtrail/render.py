@@ -80,19 +80,19 @@ def summary_lines(conn, patch, *, mine: frozenset[str] = frozenset(), width: int
     w = width or len(patch["name"])
     pad = " " * w
     state = state or current_state(conn, patch, mine)
-    mails = store.mail_infos(conn, patch["id"])
+    # The newest series revision names the patch, never a backport posted later.
     newest = store.newest_series(store.revisions(conn, patch["id"]))
-    subject = head_subject(mails) or (newest["subject"] if newest else "")
-    if not subject and (commits := store.commits(conn, patch["id"])):
-        subject = commits[0]["subject"] or ""
+    commits = store.commits(conn, patch["id"])
+    subject = ((newest["subject"] if newest else "") or (commits[0]["subject"] if commits else "")
+               or head_subject(store.mail_infos(conn, patch["id"])))
     n = len(state["mails"])
     new = len(_new_msgids(conn, patch, state))
     count = f"{n} message{'s' * (n != 1)}" + (f", {new} new" if new else "")
     if newest:
         link = f"{LORE}/{newest['root_msgid']}/"
     else:
-        first = store.commits(conn, patch["id"])
-        link = f"{first[0]['sha'][:12]} {first[0]['subject'] or ''}".strip() if first else "(no revision)"
+        link = (f"{commits[0]['sha'][:12]} {commits[0]['subject'] or ''}".strip() if commits
+                else "(no revision)")
     out = [f"{patch['name']:{w}}  {subject}",
            f"{pad}  {patch['project']} · {state['stage']} · {state['standing']['text']} ({count})",
            f"{pad}  {link}"]

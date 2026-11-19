@@ -225,3 +225,21 @@ def test_summary_links_the_newest_series_revision(conn):           # final revie
     lines = render.summary_lines(conn, store.patch_by_id(conn, pid))
     assert lines[0].endswith("[PATCH v2] fix io")
     assert lines[2].strip() == "https://lore.kernel.org/all/v2@x/"
+
+
+def test_summary_names_the_series_not_a_later_backport(conn):     # final review C3
+    pid = store.add_patch(conn, "p", project="kernel", now=1)
+    rev = store.add_revision(conn, pid, "v1@x", subject="[PATCH] fix io", author="me@example.org")
+    bp = store.add_revision(conn, pid, "bp@x", subject="[PATCH 6.1.y] fix io", kind="backport",
+                            branch="6.1")
+    store.upsert_mails(conn, rev, [make_mail("v1@x", subject="[PATCH] fix io")], 1)
+    store.upsert_mails(conn, bp, [make_mail("bp@x", subject="[PATCH 6.1.y] fix io",
+                                            date="Fri, 20 Nov 2026 12:00:00 +0000")], 1)
+    lines = render.summary_lines(conn, store.patch_by_id(conn, pid))
+    assert lines[0] == "p  [PATCH] fix io"
+    follow = store.add_patch(conn, "f", project="kernel", now=1)       # `ptl follow` + backport
+    store.set_commit(conn, follow, "a" * 40, "io: upstream subject", "manual")
+    bp2 = store.add_revision(conn, follow, "bp2@x", subject="[PATCH 6.6.y] io: upstream subject",
+                             kind="backport", branch="6.6")
+    store.upsert_mails(conn, bp2, [make_mail("bp2@x", subject="[PATCH 6.6.y] io: upstream subject")], 1)
+    assert render.summary_lines(conn, store.patch_by_id(conn, follow))[0] == "f  io: upstream subject"
