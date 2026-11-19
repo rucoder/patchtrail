@@ -48,9 +48,10 @@ class Git:
         self.path = Path(path)
 
     def run(self, *args, env=None, input=None, ok=(0,), cwd=None) -> str:
-        """stdout of a git command in the repository; GitError on other exit codes."""
-        p = subprocess.run(["git", "-C", str(cwd or self.path), *args],
-                           capture_output=True, text=True, env=env, input=input)
+        """stdout of a git command in the repository; GitError on other exit codes.
+        Bytes that are not UTF-8 (old commit text, latin-1 sources) decode as U+FFFD."""
+        p = subprocess.run(["git", "-C", str(cwd or self.path), *args], capture_output=True,
+                           encoding="utf-8", errors="replace", env=env, input=input)
         if p.returncode not in ok:
             raise GitError(f"git {' '.join(args)}: {p.stderr.strip()}")
         return p.stdout
@@ -62,7 +63,8 @@ class Git:
     def resolve(self, rev) -> str | None:
         """Full hash of a commit, or None if the repository does not have it."""
         out = subprocess.run(["git", "-C", str(self.path), "rev-parse", "-q", "--verify",
-                              f"{rev}^{{commit}}"], capture_output=True, text=True)
+                              f"{rev}^{{commit}}"], capture_output=True, encoding="utf-8",
+                             errors="replace")
         return out.stdout.strip() or None
 
     def is_ancestor(self, a, b) -> bool:

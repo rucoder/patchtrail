@@ -9,8 +9,8 @@ from patchtrail.projects.kernel.repo import GitError, KernelRepo, stable_ref
 
 
 def _git(wt: Path, *args, input=None) -> bool:
-    return subprocess.run(["git", "-C", str(wt), *args], input=input, text=True,
-                          capture_output=True).returncode == 0
+    return subprocess.run(["git", "-C", str(wt), *args], input=input, encoding="utf-8",
+                          errors="replace", capture_output=True).returncode == 0
 
 
 def make_backport(repo: KernelRepo, queue: StableQueue, sha: str, name: str, series: str,

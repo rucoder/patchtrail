@@ -175,3 +175,18 @@ def test_stable_queue_never_gcs_on_its_own(tmp_path, kfix):
     Git(q.path).run("config", "--local", "--unset", "gc.auto")
     q.update(kfix.urls.queue, NullProgress())
     assert no_auto_gc(q.path)
+
+
+def test_git_output_that_is_not_utf8(tmp_path):                  # final review M5
+    repo = tmp_path / "r"
+    git = Git(repo)
+    Git(tmp_path).run("init", "-q", str(repo))
+    (repo / "io.c").write_bytes(b"/* (C) 1994 Andr\xe9, latin-1 */\nint io;\n")
+    git.run("add", "io.c")
+    git.run("commit", "-q", "-m", "io: add")
+    (repo / "io.c").write_bytes(b"/* (C) 1994 Andr\xe9, latin-1 */\nint io_fixed;\n")
+    git.run("commit", "-q", "-am", "io: fix")
+    diff = git.run("diff", "-U3", "HEAD^", "HEAD", "--", "io.c")
+    assert " /* (C) 1994 Andr\ufffd, latin-1 */\n-int io;\n+int io_fixed;\n" in diff
+    blame = git.run("blame", "--porcelain", "-L", "1,+1", "HEAD", "--", "io.c")
+    assert "\t/* (C) 1994 Andr\ufffd, latin-1 */" in blame
