@@ -114,6 +114,8 @@ def discover(conn, source, addresses: list[str], *, now: int,
     for e in source.discover(addresses, since):
         if e.is_reply or _known(conn, e.msgid):
             continue
+        if backport_of(e.subject, e.summary)[0] is not None:
+            continue  # a stable backport: handled by the stable-list stage
         fields = dict(version=version_of(e.subject), subject=e.subject,
                       author=e.author.lower(), posted_at=_epoch(e.updated))
         pid = _match_patch(conn, e)

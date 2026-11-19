@@ -1,3 +1,5 @@
+import pytest
+
 from patchtrail import store
 from patchtrail.discover import backport_of, discover, merge_by_change_id, norm, slug, version_of
 from patchtrail.sources.base import Source
@@ -111,3 +113,26 @@ def test_merge_by_change_id(conn):
     assert merge_by_change_id(conn) == ["new"]
     assert store.get_patch(conn, "new") is None
     assert [r["version"] for r in store.revisions(conn, a)] == [1, 2]
+
+
+def test_nonreply_backport_in_both_sources_is_one_backport_revision(conn):
+    pid = store.add_patch(conn, "fix-io", now=1)
+    store.add_revision(conn, pid, "a@x", subject="[PATCH] fix io", author="me@example.org")
+    store.set_commit(conn, pid, "f" * 40, "fix io", "manual")
+    bp = E("bp@x", "[PATCH 6.1.y] fix io", summary="commit ffffffffffff upstream.\n")
+    r = discover(conn, FakeSource([bp]), ME, now=2, search=lambda *a, **k: [bp])
+    assert r.new_patches == [] and r.new_revisions == [] and r.backports == ["fix-io"]
+    revs = store.revisions(conn, pid)
+    assert [(x["kind"], x["branch"]) for x in revs] == [("series", None), ("backport", "6.1")]
+
+
+def test_untracked_nonreply_backport_creates_no_patch(conn):
+    bp = E("bp@x", "[PATCH 6.1.y] fix io")
+    r = discover(conn, FakeSource([bp]), ME, now=2, search=lambda *a, **k: [bp])
+    assert r.new_patches == [] and store.list_patches(conn) == []
+
+
+@pytest.mark.parametrize("subject", ["[PATCH v2 1/2] x", "[PATCH 0/2] x", "[RFC PATCH v3 2/5] x",
+                                     "[PATCH liburing] x"])
+def test_ordinary_subjects_are_not_backports(subject):
+    assert backport_of(subject, "")[0] is None
