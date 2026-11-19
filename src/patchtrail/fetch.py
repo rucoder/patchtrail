@@ -3,6 +3,7 @@
 project's trail fetch its repos once and follow each patch, and record a snapshot
 of every patch whose state changed. Progress goes to the runs and run_log tables."""
 
+import dataclasses
 import fcntl
 import os
 import re
@@ -117,6 +118,28 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
         skips=store.skips(conn, pid), manual_applied=bool(row["manual_applied"]),
         backports=backports, prev_state=prev[2] if prev else None, files=tuple(files))
     return view, newest_mails
+
+
+def _compose(row, view: PatchView, standing_mails: list[MailInfo], mine: frozenset[str],
+             fragment: dict) -> dict:
+    return compose_state(
+        project=get_project(row["project"]),
+        standing=standing(standing_mails, mine, following=row["relation"] == "following"),
+        mails=view.mails, fragment=fragment, manual_applied=bool(row["manual_applied"]),
+        closed=row["closed"], closed_note=row["closed_note"])
+
+
+def compose_for(conn, row, mine: frozenset[str], fragment: dict, *,
+                only: set[str] | None = None) -> dict:
+    """The state a fetch run would record for the patch with this trail fragment.
+    only restricts the mails to those msgids."""
+    view, newest = _load(conn, row)
+    mails = view.mails
+    if only is not None:
+        mails = [m for m in mails if m.msgid in only]
+        newest = [m for m in newest if m.msgid in only]
+        view = dataclasses.replace(view, mails=mails)
+    return _compose(row, view, newest, mine, fragment)
 
 
 def build_view(conn, patch_row, mine: frozenset[str]) -> PatchView:
@@ -286,12 +309,7 @@ class _Run:
                 # unread until read anyway, so they record what there is.
                 self.progress.log(f"{row['name']}: first snapshot waits for a complete fetch")
                 continue
-            state = compose_state(
-                project=get_project(row["project"]),
-                standing=standing(standing_mails, self.mine,
-                                  following=row["relation"] == "following"),
-                mails=view.mails, fragment=fragment, manual_applied=bool(row["manual_applied"]),
-                closed=row["closed"], closed_note=row["closed_note"])
+            state = _compose(row, view, standing_mails, self.mine, fragment)
             record(self.conn, row["id"], state, int(self.now()))
             self.conn.commit()
 
