@@ -405,7 +405,7 @@ Python package, so running the service needs no Node.
 - Python ≥ 3.12 package with `pyproject.toml`. Entry points `patchtrail` and `ptl`.
 - b4 is a Python dependency and is called from the same environment, so the system b4 doesn't
   matter.
-- **External requirement:** git ≥ 2.38 (for `merge-tree --write-tree`). `ptl setup` checks it.
+- **External requirement:** git ≥ 2.40 (for `merge-tree --write-tree --merge-base`). `ptl setup` checks it.
 - **From a checkout:** `make install` runs `npm ci && npm run build` (Node 20 or newer; this machine
   has 22) and then `uv tool install --force .`. pipx works too. Commands land in `~/.local/bin`,
   which is on the user's fish PATH.
