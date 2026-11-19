@@ -268,6 +268,31 @@ What's new over stable-watch:
   - Threads that the lore search finds on the first run and that weren't watched come in as read,
     so the first visit isn't a flood of old patches.
 
+### Registering patches from scripts and AI agents
+
+Asked for by the user on 2026-11-19. An agent that posts a patch upstream registers it right away
+instead of waiting for discovery. This also works for patches sent from another address.
+
+- **The interface is `ptl add NAME MSGID|URL [--follow] [--note TEXT] [--link URL]... [--json]`**,
+  for agents on the build server. It takes a short name, like `lkml-watch add`, and optional links
+  such as the GitHub PR or Jira ticket the patch came from. Links and the note are optional:
+  `ptl add NAME MSGID` alone is a complete registration.
+- **It is idempotent.** Re-adding a known Message-ID adds the new links and reports the existing
+  patch.
+- **A thread lore hasn't archived yet is not an error.** It shows "not fetched yet" and later runs
+  fetch it.
+- **`--json` prints one JSON object** with the name, msgid, project, stage, standing, links, note
+  and lore URL.
+- **Links and the note are shown, never flagged:** on the card and in the panel header, and in `ptl
+  ls`/`show`. `ptl link`, `unlink` and `note` edit them. Known forms get short labels: `PR #123`,
+  `MR !45`, `ZED-42`.
+- **Plan 2 adds `POST /api/patches`** with the same semantics, for agents on other machines. It
+  takes name, msgid, follow, note and links, answers 201 for created and 200 for an existing patch,
+  and 409 when the name belongs to another patch. It only ever fetches from lore, so it fits the
+  no-login model.
+- **For agents:** `docs/agents.md` describes the contract, and the repo ships a Claude Code skill in
+  `contrib/claude-skill/` that the user can copy to `~/.claude/skills/`.
+
 ## 9. CLI (`patchtrail`, also installed as `ptl`)
 
 Every command of both scripts has a counterpart. This is the parity checklist for switching over.
@@ -281,7 +306,7 @@ Every command of both scripts has a counterpart. This is the parity checklist fo
 | `lkml-watch trailers [NAME…]` | `ptl trailers [NAME…]` |
 | `lkml-watch poll` / `watch` | `ptl poll` (fetch, print what changed); `ptl watch` (print changes as the service records them, until ^C) |
 | `lkml-watch mine [--add] [ADDR…]` | `ptl mine [ADDR…]`: what lore has, including hidden and untracked threads. Discovery itself is automatic. |
-| `lkml-watch add NAME MSGID\|URL` | `ptl add NAME MSGID\|URL`: for threads discovery can't find. `--follow` marks someone else's thread as following. |
+| `lkml-watch add NAME MSGID\|URL` | `ptl add NAME MSGID\|URL [--note TEXT] [--link URL]... [--json]`: for threads discovery can't find, and for scripts and AI agents registering what they just sent (section 8). `--follow` marks someone else's thread as following. |
 | `lkml-watch rm` / `stable-watch rm` | `ptl hide NAME…` (and `unhide`); `ptl rm NAME…` deletes a patch and its history. |
 | `stable-watch status` | part of `ptl status` and `ptl fetch` |
 | `stable-watch check COMMIT…` | `ptl check COMMIT…`: one-off report, nothing stored |
@@ -366,7 +391,8 @@ Python package, so running the service needs no Node.
 - **Board:** six columns (Submitted, Reviewed, Accepted, Applied, Released, Backports).
   - Each card sits in exactly one column: its furthest stage.
   - A card shows the project chip, the name, a badge counting unread changes, a one-line
-    standing, "your turn" in red and, for kernel fixes, the stable-branch pills.
+    standing, "your turn" in red, the link labels (`PR #123`, `ZED-42`) and, for kernel fixes, the
+    stable-branch pills.
   - Unread cards have a blue left edge.
   - Finished cards fold into "+N older" at the bottom of their column 30 days after finishing.
     Finished means the card has reached the last stage its project declares, with every branch
@@ -397,7 +423,9 @@ Python package, so running the service needs no Node.
   - close;
   - mark applied;
   - mark a stable branch "won't backport";
-  - add a thread by Message-ID or lore URL (it only ever fetches from lore).
+  - add a thread by Message-ID or lore URL (it only ever fetches from lore), with a name, a note
+    and links;
+  - add and remove links, and edit the note.
 - **CLI-only actions:** setting a maintainer tree URL, deleting, renaming, merging and splitting.
 
 ## 13. Packaging and install

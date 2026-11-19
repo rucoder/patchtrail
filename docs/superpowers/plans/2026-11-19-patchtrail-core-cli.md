@@ -1452,11 +1452,20 @@ def test_import_twice_is_idempotent(conn, old):
     - `FAILED mail for 6.1.y: <url>`
     - `closed: – → moved (converted to a GitLab MR)`
     - A missing old or new value prints as `–`.
-  - `summary_lines(conn, patch) -> list[str]`, three lines:
+  - `summary_lines(conn, patch) -> list[str]`, three lines, plus up to two optional ones:
     - `f"{name:{w}}  {subject}"`;
     - an indent, then `f"{project} · {stage} · {standing text} ({n} message(s)[, k new])"`;
     - an indent, then the lore link `https://lore.kernel.org/all/<root msgid>/`. A patch with no
-      revisions prints its first commit instead.
+      revisions prints its first commit instead;
+    - when the patch has links: an indent, then `"links: " + " · ".join(link_label(u) + " " + u)`;
+    - when it has a note: an indent, then `f"note: {note}"`.
+    The links and note come from Task 15's schema 002; Task 14 reads them only if the `links` table
+    exists, so the two tasks can land in order.
+  - `link_label(url: str) -> str`: a short label for known link forms.
+    - `https://github.com/<o>/<r>/pull/<n>` → `PR #<n>`
+    - `https://gitlab.<…>/<…>/-/merge_requests/<n>` → `MR !<n>`
+    - any URL with `/browse/<KEY-123>` → `<KEY-123>`
+    - otherwise the host name.
   - `kernel_lines(state) -> list[str]`: the stable-watch report body (lines 478-509) rendered from
     the state document:
     - `Fixes:` and `Cc: stable` line;
@@ -1545,19 +1554,47 @@ def test_status_fetch_busy(populated, capsys, monkeypatch):
 ### Task 15: CLI: changing commands
 
 **Files:**
-- Modify: `src/patchtrail/cli.py`
-- Create: `tests/test_cli_write.py`
+- Modify: `src/patchtrail/cli.py`, `src/patchtrail/fetch.py` (adds `reevaluate`), `src/patchtrail/db.py`
+  (atomic migrations), `src/patchtrail/store.py` (links and note)
+- Create: `tests/test_cli_write.py`, `src/patchtrail/schema/002_links.sql`, `docs/agents.md`
 
 **Interfaces:**
 - Produces these commands. Every change is committed in one transaction.
   - `read NAME…|--all` and `unread NAME…`: `mark_read` and `mark_unread`.
-  - `add NAME MSGID|URL [--follow]`:
-    - validates the name and uses `parse_msgid`;
-    - creates the patch (relation `following` with `--follow`) and a revision;
-    - then `run_fetch(trigger="cli", patch_names=[NAME], discover_new=False)` and prints
-      `summary_lines`;
-    - on `Busy`, the patch stays added, and the command prints `added NAME; it is fetched on the next
-      run`.
+  - `add NAME MSGID|URL [--follow] [--note TEXT] [--link URL]... [--json]`. This is the
+    registration interface for scripts and AI agents that post patches (asked for by the user).
+    Plan 2 exposes the same semantics as `POST /api/patches`.
+    - It validates the name and uses `parse_msgid`.
+    - **Idempotent:** if the msgid is already a revision root, it doesn't create anything. It adds
+      any new `--link` URLs to the owning patch, replaces the note when `--note` is given, and
+      reports that patch. Its name wins even if NAME differs, and the exit status is 0.
+    - If NAME is taken by a different patch, it exits 1 with `ptl: name taken: NAME`.
+    - Otherwise it creates the patch (relation `following` with `--follow`), a revision, the links
+      and the note.
+    - Then it runs `run_fetch(trigger="cli", patch_names=[NAME], discover_new=False)`. A thread that
+      lore hasn't archived yet is not an error: the run logs it, the patch stays with standing
+      "not fetched yet", and later runs fetch it.
+    - On `Busy`, the patch stays added. Text mode prints `added NAME; it is fetched on the next run`.
+    - **Output:** text mode prints `summary_lines`. `--json` prints exactly one JSON object to stdout:
+      `{"name", "msgid", "project", "stage", "standing", "links", "note", "url"}`, where `url` is
+      `https://lore.kernel.org/all/<msgid>/`, `stage` and `standing` come from the latest snapshot
+      (`null` before the first one), and `links` is a list of URLs.
+  - `link NAME URL...` and `unlink NAME URL...`: add or remove links on an existing patch.
+  - `note NAME TEXT`: set the note. An empty TEXT clears it.
+  - **Schema 002** (`schema/002_links.sql`):
+    - `ALTER TABLE patches ADD COLUMN note TEXT;`
+    - `CREATE TABLE links (patch_id INTEGER NOT NULL REFERENCES patches(id) ON DELETE CASCADE, url
+      TEXT NOT NULL, added_at INTEGER NOT NULL, PRIMARY KEY (patch_id, url));`
+    - `db.connect` applies each migration atomically, together with its `PRAGMA user_version`, so a
+      failing migration leaves the old version intact. `SCHEMA_VERSION` becomes 2.
+    - `store` gains `add_links(conn, patch_id, urls, now) -> list[str]` (the new ones),
+      `remove_links(conn, patch_id, urls)`, `links(conn, patch_id) -> list[str]` (by `added_at`),
+      and `note` joins the `set_field` allowlist.
+    - Links and the note are not part of the snapshot state, so they never flag a patch.
+  - **`docs/agents.md`:** the contract for agents, in under 40 lines. After sending a patch with `git
+    send-email` or `b4 send`, run `ptl add <short-name> <Message-ID> [--link <PR or Jira URL>]...
+    --json`. It is safe to repeat, and lore may need a few minutes. It includes one example of the
+    JSON output.
   - `follow NAME [COMMIT] [TREE-URL BRANCH] [--stable]`:
     - on an existing patch: set the commit (`manual`), the tree (`manual`) and `force_stable`;
     - for a new NAME, COMMIT is required: create a `following` patch with project `kernel` and no
@@ -1634,19 +1671,53 @@ def test_add_follow(populated, conn, monkeypatch):
     monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
     assert main(["add", "x-thread", "https://lore.kernel.org/all/abc@d/", "--follow"]) == 0
     assert store.get_patch(conn, "x-thread")["relation"] == "following"
+
+def test_add_for_agents_json_idempotent_links(populated, conn, monkeypatch, capsys):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
+    pr, jira = "https://github.com/lf-edge/eve/pull/5123", "https://zededa.atlassian.net/browse/ZED-42"
+    assert main(["add", "iowq-fix", "<new@x>", "--link", pr, "--note", "found by agent", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert (out["name"], out["msgid"], out["links"], out["note"], out["stage"]) == (
+        "iowq-fix", "new@x", [pr], "found by agent", None)
+    assert out["url"] == "https://lore.kernel.org/all/new@x/"
+    # again, under another name and with one more link: same patch, link added, nothing duplicated
+    assert main(["add", "other-name", "new@x", "--link", jira, "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["name"] == "iowq-fix" and out["links"] == [pr, jira]
+    assert store.get_patch(conn, "other-name") is None
+
+def test_add_name_taken(populated, monkeypatch, capsys):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
+    assert main(["add", "erofs", "brand-new@x"]) == 1
+    assert "ptl: name taken: erofs" in capsys.readouterr().err
+
+def test_links_do_not_flag(populated, conn):
+    main(["read", "--all"])
+    assert main(["link", "erofs", "https://github.com/o/r/pull/7"]) == 0
+    assert main(["note", "erofs", "x"]) == 0
+    assert not snapshot.unread(conn, store.get_patch(conn, "erofs")["id"])
+
+def test_migration_to_v2_is_atomic(tmp_path, monkeypatch):
+    # a broken 002 must leave user_version at 1 and no partial table behind
+    ...use monkeypatch to make the migration loader return a 002 script that fails midway,
+       connect, expect sqlite3.Error, then assert user_version == 1 and no `links` table...
 ```
+
+  Write `test_migration_to_v2_is_atomic` in full. Point the loader at a temp directory holding
+  `001_init.sql` (copied) and a broken `002_x.sql`, through a module-level `MIGRATIONS` hook or
+  function parameter in `db.py` that tests can override.
 
 - [ ] **Step 2: Run the tests and see them fail.**
 - [ ] **Step 3: Implement the commands and `fetch.reevaluate`.**
-- [ ] **Step 4: Run the tests and see them pass.** Expected: 7 passed.
-- [ ] **Step 5: Commit** with `git commit -s -m "patchtrail: CLI changing commands"`.
+- [ ] **Step 4: Run the tests and see them pass.** Expected: 11 passed.
+- [ ] **Step 5: Commit** with `git commit -s -m "patchtrail: CLI changing commands, agent registration"`.
 
 ---
 
 ### Task 16: Setup, seeding, install and the switch-over check
 
 **Files:**
-- Create: `src/patchtrail/setup.py`, `tests/test_setup.py`, `README.md`
+- Create: `src/patchtrail/setup.py`, `tests/test_setup.py`, `README.md`, `contrib/claude-skill/patchtrail-register/SKILL.md`
 - Modify: `src/patchtrail/cli.py` (the `setup` command)
 
 **Interfaces:**
@@ -1670,7 +1741,12 @@ def test_add_follow(populated, conn, monkeypatch):
     7. print the next steps: `ptl fetch` (the first run fetches mainline and stable; with a seed this
        takes minutes, without one several GB) and `ptl status`.
   - `README.md`: what it is, install (`make install`), `ptl setup`, the command table (copy spec
-    section 9), where files live, and the coexistence note.
+    section 9), where files live, the coexistence note, and a short "Registering patches from
+    scripts and AI agents" section pointing to `docs/agents.md`.
+  - `contrib/claude-skill/patchtrail-register/SKILL.md`: a Claude Code skill wrapping
+    `docs/agents.md`. Its description should trigger after an agent sends a patch upstream with
+    `git send-email` or `b4 send`. The README says to copy it to `~/.claude/skills/` to enable it.
+    `ptl setup` does not install it.
 
 - [ ] **Step 1: Write the failing tests** in `tests/test_setup.py`
 
