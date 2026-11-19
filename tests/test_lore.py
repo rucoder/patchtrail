@@ -97,7 +97,7 @@ def test_fetch_thread_uses_b4(tmp_path, monkeypatch):
     fake.chmod(0o755)
     monkeypatch.setenv("PATCHTRAIL_B4", str(fake))
     assert fetch_thread("a@b").startswith(b"From ")
-    assert (tmp_path / "args").read_text().split() == ["-q", "mbox", "-C", "-o", "-", "a@b"]
+    assert (tmp_path / "args").read_text().split() == ["-q", "mbox", "-C", "-o", "-", "--", "a@b"]
 
 
 def test_fetch_thread_error(tmp_path, monkeypatch):
@@ -193,3 +193,14 @@ def test_fake_lore_pages_read_like_real_ones():
     assert got[0].is_reply and not got[1].is_reply and got[0].subject == "[PATCH 6.1.y] fix é 0"
     assert got[0].summary == f"commit {'a' * 40} upstream.\n\n+++ b/io.c\nsee https://x.org/0\n"
     assert search("stable", "f:other@x", urlopen=lore) == []
+
+
+def test_fetch_thread_never_passes_an_option_to_b4(tmp_path, monkeypatch):   # final review M3
+    fake = tmp_path / "b4"
+    fake.write_text("#!/bin/sh\necho ran > %s/ran\nprintf 'From x\\n'\n" % tmp_path)
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATCHTRAIL_B4", str(fake))
+    for bad in ["-oProxyCommand=x@y", "no-at-sign", ""]:
+        with pytest.raises(LoreError, match="not a Message-ID"):
+            fetch_thread(bad)
+    assert not (tmp_path / "ran").exists()

@@ -344,7 +344,7 @@ def test_check_busy(populated, monkeypatch, capsys):
     fcntl.flock(fd, fcntl.LOCK_EX)
     try:
         monkeypatch.setattr("patchtrail.cli.KernelTrail", lambda *a: pytest.fail("ran"))
-        assert main(["check", "abc"]) == 1
+        assert main(["check", "abc1234"]) == 1
         assert "ptl: a fetch is already running" in capsys.readouterr().err
     finally:
         os.close(fd)
@@ -485,3 +485,53 @@ def test_add_fetches_the_thread_but_not_the_trail(populated, conn, monkeypatch, 
     log = [r[0] for r in conn.execute(
         "SELECT line FROM run_log WHERE run_id=(SELECT MAX(id) FROM runs) ORDER BY rowid")]
     assert [l for l in log if l.startswith("phase: ")] == ["phase: threads", "phase: evaluate"]
+
+
+# --- final review M3: arguments that reach git, b4 and pages are checked --------
+
+@pytest.mark.parametrize("msgid", ["-oProxyCommand=x@y", "--help@x", "no-at-sign", "a b@x"])
+def test_add_rejects_what_is_no_message_id(populated, conn, monkeypatch, capsys, msgid):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: pytest.fail("fetched"))
+    assert main(["add", "x-thread", "--", msgid]) == 1
+    assert "ptl: not a Message-ID:" in capsys.readouterr().err
+    assert store.get_patch(conn, "x-thread") is None
+
+
+@pytest.mark.parametrize("url", ["file:///etc/passwd", "javascript:alert(1)", "ftp://x.org/a",
+                                 "https://", "github.com/a/b/pull/1"])
+def test_links_must_be_http_urls(populated, conn, monkeypatch, capsys, url):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
+    assert main(["add", "x-thread", "x@y", "--link", url]) == 1
+    assert main(["link", "erofs", url]) == 1
+    assert capsys.readouterr().err.count(f"ptl: not an http(s) URL: {url}") == 2
+    assert store.get_patch(conn, "x-thread") is None
+    assert store.links(conn, store.get_patch(conn, "erofs")["id"]) == []
+    with pytest.raises(ValueError):
+        store.add_links(conn, store.get_patch(conn, "erofs")["id"], [url], 1)
+
+
+@pytest.mark.parametrize("name", [".", ".."])
+def test_dot_names_are_invalid(populated, monkeypatch, capsys, name):
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
+    assert not store.valid_name(name)
+    assert main(["add", name, "x@y"]) == 1
+    assert main(["rename", "erofs", name]) == 1
+    assert main(["follow", name, "0123456789ab"]) == 1
+    assert capsys.readouterr().err.count(f"ptl: invalid name: {name}") == 3
+
+
+@pytest.mark.parametrize("cmd", [["follow", "someones-fix", "{}"], ["follow", "erofs", "{}"],
+                                 ["follow", "erofs", "{}", "https://t.org/x.git", "main"],
+                                 ["mark-applied", "erofs", "{}"], ["check", "{}"],
+                                 ["backport", "{}", "6.1"]])
+@pytest.mark.parametrize("commit", ["HEAD", "main", "012345", "0123456789abcdefX",
+                                    "a" * 41, "HEAD~1"])
+def test_commit_arguments_are_hashes(populated, conn, monkeypatch, capsys, cmd, commit):
+    monkeypatch.setattr("patchtrail.cli.KernelTrail", lambda *a: pytest.fail("ran"))
+    monkeypatch.setattr("patchtrail.cli.make_backport", lambda *a: pytest.fail("ran"))
+    assert main([c.format(commit) for c in cmd]) == 1
+    err = capsys.readouterr().err
+    assert f"ptl: not a commit hash: {commit}" in err or f"ptl: not tracked: {commit}" in err
+    assert store.get_patch(conn, "someones-fix") is None
+    assert store.commits(conn, store.get_patch(conn, "erofs")["id"]) == []
+    assert not store.get_patch(conn, "erofs")["manual_applied"]

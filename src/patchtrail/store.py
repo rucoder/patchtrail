@@ -6,6 +6,7 @@ import re
 import sqlite3
 
 _NAME_RE = re.compile(r"[A-Za-z0-9._-]+")
+_URL_RE = re.compile(r"https?://[^\s/?#]+\S*")
 
 _FIELDS = frozenset(
     "name project project_override relation hidden closed closed_note "
@@ -45,7 +46,12 @@ def atomic(conn):
 
 
 def valid_name(name: str) -> bool:
-    return _NAME_RE.fullmatch(name) is not None
+    return _NAME_RE.fullmatch(name) is not None and name not in (".", "..")
+
+
+def valid_url(url: str) -> bool:
+    """An http(s) URL: the only kind a patch's links may hold (pages show them)."""
+    return _URL_RE.fullmatch(url) is not None
 
 
 def add_patch(conn, name, *, relation="mine", project="unknown", now) -> int:
@@ -188,7 +194,11 @@ def set_field(conn, patch_id, column, value):
 
 
 def add_links(conn, patch_id, urls, now) -> list[str]:
-    """Attach URLs (a PR, a Jira issue) to the patch; return the ones that were new."""
+    """Attach URLs (a PR, a Jira issue) to the patch; return the ones that were new.
+    ValueError for one that is not http(s)."""
+    bad = [u for u in urls if not valid_url(u)]
+    if bad:
+        raise ValueError(f"not an http(s) URL: {bad[0]}")
     new = []
     for url in dict.fromkeys(urls):
         cur = conn.execute("INSERT OR IGNORE INTO links (patch_id, url, added_at) VALUES (?,?,?)",

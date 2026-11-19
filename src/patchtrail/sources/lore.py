@@ -44,6 +44,11 @@ def parse_msgid(arg: str) -> str:
     return arg.strip().removeprefix("<").removesuffix(">")
 
 
+def valid_msgid(msgid: str) -> bool:
+    """Shaped like a Message-ID: has an @, no whitespace, and cannot pass for an option."""
+    return "@" in msgid and not msgid.startswith("-") and not any(c.isspace() for c in msgid)
+
+
 def b4_path() -> str:
     env = os.environ.get("PATCHTRAIL_B4")
     if env:
@@ -58,7 +63,9 @@ def b4_path() -> str:
 
 
 def fetch_thread(msgid: str) -> bytes:
-    r = subprocess.run([b4_path(), "-q", "mbox", "-C", "-o", "-", msgid],
+    if not valid_msgid(msgid):
+        raise LoreError(f"not a Message-ID: {msgid!r}")
+    r = subprocess.run([b4_path(), "-q", "mbox", "-C", "-o", "-", "--", msgid],
                        capture_output=True)
     if r.returncode != 0 or not r.stdout.startswith(b"From "):
         err = r.stderr.decode(errors="replace").strip().splitlines()

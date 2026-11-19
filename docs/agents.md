@@ -4,14 +4,16 @@ After you send a patch with `git send-email` or `b4 send`, register it with patc
 
     ptl add <short-name> <Message-ID> [--link <PR or Jira URL>]... [--note TEXT] --json
 
-- `<short-name>`: letters, digits, `.`, `_`, `-`; it is how you refer to the patch later.
+- `<short-name>`: letters, digits, `.`, `_`, `-` (not `.` or `..` alone); it is how you refer to the patch later.
 - `<Message-ID>`: of the cover letter (or the single patch), with or without `<>`; a lore URL works too.
-- `--link` (repeatable) attaches a PR or Jira URL. `--note` sets a one-line note. Both are optional.
+- `--link` (repeatable) attaches a PR or Jira URL (`http://` or `https://`). `--note` sets a one-line note. Both are optional.
 - `--json` prints exactly one JSON object on stdout; errors go to stderr as `ptl: ...`, exit status 1.
 
 It is safe to repeat. If the Message-ID is already registered, nothing is created: new links are
 added, `--note` replaces the note, and the existing patch is reported under its first name.
-`ptl add` fails (exit 1) only if the name belongs to a different patch.
+`ptl add` fails (exit 1) only if the name belongs to a different patch or an argument is
+malformed: a name with other characters (or `.`, `..`), a Message-ID without `@`, a link that is
+not an `http(s)://` URL.
 
 `ptl add` fetches only the thread from lore, so it returns in seconds; where the patch stands in
 git (maintainer tree, mainline, stable branches) is filled in by the next `ptl fetch`.

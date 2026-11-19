@@ -154,6 +154,21 @@ def _one(conn, name: str):
     return _patches(conn, [name])[0]
 
 
+def _commit_arg(arg: str) -> str:
+    """A commit hash as given on the command line: 7 to 40 hex digits, never a ref
+    or anything git could read as an option."""
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", arg):
+        raise CliError(f"not a commit hash: {arg}")
+    return arg.lower()
+
+
+def _urls(urls: list[str]) -> list[str]:
+    for url in urls:
+        if not store.valid_url(url):
+            raise CliError(f"not an http(s) URL: {url}")
+    return urls
+
+
 def _reeval(conn, cfg, *rows) -> None:
     for row in rows:
         reevaluate(conn, paths(), cfg, row["id"])
@@ -274,8 +289,9 @@ def cmd_add(args, conn, cfg, mine) -> int:
     if not store.valid_name(args.name):
         raise CliError(f"invalid name: {args.name}")
     msgid = lore.parse_msgid(args.msgid)
-    if not msgid:
-        raise CliError("no Message-ID")
+    if not lore.valid_msgid(msgid):
+        raise CliError(f"not a Message-ID: {args.msgid}")
+    _urls(args.link)
     now = int(time.time())
     with store.atomic(conn):
         rev = store.revision_by_msgid(conn, msgid)
@@ -313,7 +329,7 @@ def cmd_add(args, conn, cfg, mine) -> int:
 
 def cmd_link(args, conn, cfg, mine) -> int:
     with store.atomic(conn):
-        store.add_links(conn, _one(conn, args.name)["id"], args.urls, int(time.time()))
+        store.add_links(conn, _one(conn, args.name)["id"], _urls(args.urls), int(time.time()))
     return 0
 
 
@@ -334,7 +350,7 @@ def cmd_follow(args, conn, cfg, mine) -> int:
     rest = args.rest
     if len(rest) > 3:
         raise CliError("usage: follow NAME [COMMIT] [TREE-URL BRANCH] [--stable]")
-    commit = rest[0] if len(rest) in (1, 3) else None
+    commit = _commit_arg(rest[0]) if len(rest) in (1, 3) else None
     tree = tuple(rest[-2:]) if len(rest) >= 2 else None
     row = store.get_patch(conn, args.name)
     if row is None:
@@ -483,9 +499,10 @@ def cmd_unskip(args, conn, cfg, mine) -> int:
 @_atomic
 def cmd_mark_applied(args, conn, cfg, mine) -> int:
     row = _one(conn, args.name)
+    commit = _commit_arg(args.commit) if args.commit else None
     store.set_field(conn, row["id"], "manual_applied", 1)
-    if args.commit:
-        store.set_commit(conn, row["id"], args.commit, "", "manual")
+    if commit:
+        store.set_commit(conn, row["id"], commit, "", "manual")
     _reeval(conn, cfg, row)
     return 0
 
@@ -502,6 +519,7 @@ class _StderrProgress:
 
 
 def cmd_check(args, conn, cfg, mine) -> int:
+    args.commits = [_commit_arg(c) for c in args.commits]
     progress = _StderrProgress()
     try:
         with locked(paths(), conn):
