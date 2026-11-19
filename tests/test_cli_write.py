@@ -160,6 +160,7 @@ def test_add_runs_a_targeted_fetch(populated, monkeypatch):
     assert main(["add", "x-thread", "abc@d"]) == 0
     assert seen["a"][2] == "cli"
     assert seen["k"]["patch_names"] == ["x-thread"] and seen["k"]["discover_new"] is False
+    assert seen["k"]["lore_only"] is True
 
 
 def test_add_busy_text(populated, conn, monkeypatch, capsys):
@@ -449,3 +450,38 @@ def test_close_is_one_transaction(populated, conn, monkeypatch):
         main(["close", "erofs", "dropped", "--note", "n"])
     p = store.get_patch(conn, "erofs")
     assert (p["closed"], p["closed_note"]) == (None, None)
+
+
+def test_add_fetches_the_thread_but_not_the_trail(populated, conn, monkeypatch, tmp_path,
+                                                  capsys):                # final review I3
+    from mails import mbox
+
+    from patchtrail.projects.kernel import KernelTrail
+    built = []
+
+    class Recorder(KernelTrail):
+        def __init__(self, *a, **k):
+            built.append(a)
+            super().__init__(*a, **k)
+    monkeypatch.setattr("patchtrail.projects.kernel.KernelTrail", Recorder)
+    threads = tmp_path / "lore"
+    threads.mkdir()
+    (threads / "new@x.mbox").write_bytes(mbox(
+        make_mail("new@x", subject="[PATCH v2] io: fix", to="io-uring@vger.kernel.org"),
+        make_mail("r@x", frm="X <x@y.org>", in_reply_to="new@x", subject="Re: [PATCH v2] io: fix",
+                  date="Thu, 12 Nov 2026 10:00:00 +0000", body="Reviewed-by: X <x@y.org>\n")))
+    b4 = tmp_path / "b4"
+    b4.write_text(f'#!/bin/sh\nfor last; do :; done\nexec cat "{threads}/$last.mbox"\n')
+    b4.chmod(0o755)
+    monkeypatch.setenv("PATCHTRAIL_B4", str(b4))
+    assert main(["add", "io-fix", "new@x", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert built == []
+    assert (out["project"], out["stage"]) == ("kernel", "reviewed")
+    assert out["standing"].startswith("Reviewed-by X; waiting for the maintainer since 2026-11-1")
+    p = store.get_patch(conn, "io-fix")
+    assert store.revisions(conn, p["id"])[0]["version"] == 2
+    assert not snapshot.unread(conn, p["id"])
+    log = [r[0] for r in conn.execute(
+        "SELECT line FROM run_log WHERE run_id=(SELECT MAX(id) FROM runs) ORDER BY rowid")]
+    assert [l for l in log if l.startswith("phase: ")] == ["phase: threads", "phase: evaluate"]

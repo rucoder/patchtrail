@@ -755,3 +755,39 @@ def test_same_version_newest_is_the_latest_posted(conn, cfgp):
     run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
     assert store.newest_series(store.revisions(conn, pid))["root_msgid"] == "b@x"
     assert snapshot.latest(conn, pid)[2]["standing"]["kind"] == "waiting_reply"
+
+
+# --- final review I3: `ptl add` fetches lore only -----------------------------
+
+def test_lore_only_run_keeps_the_trail_fragment(conn, cfgp):
+    pid = kernel_patch(conn)
+    fragment = {"commits": [commit("c" * 40)], "branches": {"6.1": {"c" * 12: {"state": "queued"}}},
+                "failed": {}, "hint": None}
+    src = FakeSource({"a@x": [make_mail("a@x")]})
+    run_fetch(*cfgp, "cli", source=src, trails={"kernel": FakeTrail(TrailResult(fragment=fragment))},
+              search=nosearch)
+    trail = FakeTrail()
+    src.threads["a@x"].append(make_mail("b@x", frm="X <x@y.org>", subject="Re: [PATCH] fix io",
+                                        in_reply_to="a@x", date="Thu, 12 Nov 2026 10:00:00 +0000"))
+    rid = run_fetch(*cfgp, "cli", source=src, trails={"kernel": trail}, search=nosearch,
+                    patch_names=["p"], discover_new=False, lore_only=True)
+    assert (trail.prepared, trail.evaluated) == ([], [])
+    assert phases_seen(conn, rid) == ["threads", "evaluate"]
+    state = snapshot.latest(conn, pid)[2]
+    assert state["mails"] == ["a@x", "b@x"] and state["standing"]["kind"] == "your_turn"
+    assert (state["commits"], state["branches"]) == (fragment["commits"], fragment["branches"])
+
+
+def test_lore_only_first_snapshot(conn, cfgp):
+    pid = kernel_patch(conn)
+    store.set_field(conn, pid, "read_on_first_snapshot", 1)           # `ptl add`
+    run_fetch(*cfgp, "cli", source=FakeSource({"a@x": LoreError("not on lore yet?")}),
+              trails={"kernel": FakeTrail()}, search=nosearch, patch_names=["p"],
+              discover_new=False, lore_only=True)
+    assert snapshot.latest(conn, pid) is None                        # not archived: waits
+    run_fetch(*cfgp, "cli", source=FakeSource({"a@x": [make_mail("a@x")]}),
+              trails={"kernel": FakeTrail()}, search=nosearch, patch_names=["p"],
+              discover_new=False, lore_only=True)
+    state = snapshot.latest(conn, pid)[2]
+    assert state["standing"]["kind"] == "waiting_reply" and state["commits"] == []
+    assert not snapshot.unread(conn, pid)

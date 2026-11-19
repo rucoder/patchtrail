@@ -294,7 +294,10 @@ def cmd_add(args, conn, cfg, mine) -> int:
         if args.note is not None:
             store.set_field(conn, row["id"], "note", args.note or None)
     try:
-        run_fetch(paths(), cfg, "cli", patch_names=[row["name"]], discover_new=False)
+        # Lore only: an agent waits seconds, not for the kernel trail's fetches.
+        # The next full fetch follows the patch past the list.
+        run_fetch(paths(), cfg, "cli", patch_names=[row["name"]], discover_new=False,
+                  lore_only=True)
     except Busy:
         if not args.json:
             print(f"added {row['name']}; it is fetched on the next run")

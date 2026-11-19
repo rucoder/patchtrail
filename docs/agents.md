@@ -13,6 +13,9 @@ It is safe to repeat. If the Message-ID is already registered, nothing is create
 added, `--note` replaces the note, and the existing patch is reported under its first name.
 `ptl add` fails (exit 1) only if the name belongs to a different patch.
 
+`ptl add` fetches only the thread from lore, so it returns in seconds; where the patch stands in
+git (maintainer tree, mainline, stable branches) is filled in by the next `ptl fetch`.
+
 lore may need a few minutes to archive the mail. Until it has, the patch shows "not fetched yet"
 in `ptl ls` (`stage` and `standing` are null in the JSON); a later `ptl fetch` picks it up. Run `ptl add` again
 with more `--link` options whenever a PR or ticket appears.

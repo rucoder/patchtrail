@@ -170,9 +170,10 @@ def _why(e: BaseException) -> str:
 
 class _Run:
     def __init__(self, conn, paths: Paths, cfg: Config, progress: DbProgress, *, source,
-                 trails: dict[str, Trail] | None, search, now):
+                 trails: dict[str, Trail] | None, search, now, lore_only: bool = False):
         self.conn, self.paths, self.cfg, self.progress = conn, paths, cfg, progress
         self.source, self.trails, self.search, self.now = source, trails, search, now
+        self.lore_only = lore_only
         self.mine = my_addresses(cfg)
         self._built: dict[str, Trail | None] = {}
         # Patches with a revision whose fetch failed and whose root mail is not stored.
@@ -316,8 +317,9 @@ class _Run:
 
     def _evaluate_one(self, row, loaded, ready) -> None:
         view, standing_mails = loaded[row["id"]]
-        failed = row["project"] not in ready
-        if failed:
+        # A lore-only run leaves the trail to the next full fetch.
+        failed = row["project"] not in ready and not self.lore_only
+        if failed or self.lore_only:
             fragment = _previous(view)
         elif ready[row["project"]] is None:
             fragment = _empty()
@@ -416,9 +418,11 @@ def reevaluate(conn, paths: Paths, cfg: Config, patch_id: int) -> int | None:
 
 def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=None, search=None,
               now=time.time, patch_names: list[str] | None = None,
-              discover_new: bool = True, echo=None) -> int:
+              discover_new: bool = True, echo=None, lore_only: bool = False) -> int:
     """One fetch run; returns its id. Raises Busy when another run holds the lock.
-    echo is called with each progress line as it is logged."""
+    echo is called with each progress line as it is logged. lore_only fetches the
+    threads and records the patches' states with their last trail data, without
+    preparing or following any trail (`ptl add`: seconds, not the kernel's fetch)."""
     source = LoreSource() if source is None else source
     search = lore.search if search is None else search
     conn = db.connect(paths.db)
@@ -434,12 +438,12 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
             progress = DbProgress(conn, run_id, now, echo)
             try:
                 run = _Run(conn, paths, cfg, progress, source=source, trails=trails,
-                           search=search, now=now)
+                           search=search, now=now, lore_only=lore_only)
                 if discover_new and patch_names is None:
                     run.discover()
                 rows = run.threads(_selected(conn, patch_names))
                 loaded = {row["id"]: _load(conn, row) for row in rows}
-                ready = run.repos({pid: v for pid, (v, _) in loaded.items()})
+                ready = {} if lore_only else run.repos({pid: v for pid, (v, _) in loaded.items()})
                 run.evaluate(rows, loaded, ready)
             except KeyboardInterrupt:
                 conn.rollback()
