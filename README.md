@@ -77,9 +77,9 @@ another disk):
 
 git never repacks these repositories on its own (`gc.auto=0`, `maintenance.auto=false`), and the
 packs hardlinked from a seed carry `.keep` files, so they stay shared with the seed instead of
-costing their size again. Fetches add loose objects and small packs; while no fetch runs,
-`git -C ~/.patchtrail/git/linux.git repack -d -l` packs the loose ones and leaves the seed's packs
-alone.
+costing their size again. Fetches add packs over time; while no fetch runs,
+`git -C ~/.patchtrail/git/linux.git repack -a -d -l` merges them and leaves the `.keep` packs
+alone (the same goes for `git/stable-queue` and project repositories).
 
 Your own mail addresses come from `$PATCHTRAIL_FROM`, then `addresses` in `config.toml`, then
 git's `sendemail.from` and `user.email`.
