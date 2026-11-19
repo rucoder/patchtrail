@@ -22,3 +22,13 @@ def hermetic(tmp_path, monkeypatch):
 
     monkeypatch.setattr(urllib.request, "urlopen", no_network)
     return home
+
+
+@pytest.fixture
+def conn():
+    from patchtrail import db
+    from patchtrail.config import paths
+
+    c = db.connect(paths().db)
+    yield c
+    c.close()
