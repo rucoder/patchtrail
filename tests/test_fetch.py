@@ -706,3 +706,52 @@ def test_patch_deleted_before_evaluate_is_dropped(conn, cfgp):    # the fresh-is
     assert last_run(conn)["status"] == "ok"
     assert "gone: removed during the run" in log_lines(conn, rid)
     assert snapshot.latest(conn, kept) is not None
+
+
+# --- final review I1: the newest revision is the one with the highest version ----
+
+def erofs_thread():
+    """v1, two replies from the maintainer and mine, then v2 sent in reply to the
+    maintainer's second reply (the real erofs thread's shape)."""
+    xiang = "Gao Xiang <xiang@kernel.org>"
+    subj = "erofs-utils: lib: follow symlinks on intermediate tar path components"
+    return [
+        make_mail("v1@x", subject=f"[PATCH] {subj}", to="linux-erofs@lists.ozlabs.org",
+                  date="Sat, 25 Jul 2026 15:09:20 +0000"),
+        make_mail("x1@x", frm=xiang, subject=f"Re: [PATCH] {subj}", in_reply_to="v1@x",
+                  date="Sun, 2 Aug 2026 21:00:56 +0800"),
+        make_mail("me1@x", subject=f"Re: [PATCH] {subj}", in_reply_to="x1@x",
+                  date="Sat, 22 Aug 2026 08:59:09 +0000",
+                  extra_headers={"References": "<v1@x> <x1@x>"}),
+        make_mail("x2@x", frm=xiang, subject=f"Re: [PATCH] {subj}", in_reply_to="v1@x",
+                  date="Fri, 28 Aug 2026 00:52:42 +0800"),
+        make_mail("v2@x", subject=f"[PATCH v2] {subj}", in_reply_to="x2@x",
+                  to="linux-erofs@lists.ozlabs.org", date="Sun, 20 Sep 2026 07:59:22 +0000")]
+
+
+def test_imported_v2_root_named_without_version_stays_newest(conn, cfgp):
+    pid = store.add_patch(conn, "erofs", now=1)
+    store.add_revision(conn, pid, "v2@x", subject="")               # as `ptl add` or an old import left it
+    store.add_revision(conn, pid, "v1@x", subject="[PATCH] erofs-utils: lib: follow symlinks"
+                       " on intermediate tar path components", author="me@example.org")  # discovery
+    src = FakeSource({"v1@x": erofs_thread(), "v2@x": erofs_thread()})
+    run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    assert [(r["root_msgid"], r["version"]) for r in store.revisions(conn, pid)] == [
+        ("v1@x", 1), ("v2@x", 2)]
+    st = snapshot.latest(conn, pid)[2]["standing"]
+    assert (st["kind"], st["since"]) == ("waiting_reply", epoch("2026-09-20") + 28762)
+
+
+def test_same_version_newest_is_the_latest_posted(conn, cfgp):
+    pid = store.add_patch(conn, "p", now=1)
+    store.add_revision(conn, pid, "b@x")                          # the resend, tracked first
+    store.add_revision(conn, pid, "a@x")
+    src = FakeSource({
+        "a@x": [make_mail("a@x", date="Mon, 09 Nov 2026 10:00:00 +0000"),
+                make_mail("a1@x", frm="X <x@y.org>", subject="Re: [PATCH] fix io",
+                          in_reply_to="a@x", date="Tue, 10 Nov 2026 10:00:00 +0000")],
+        "b@x": [make_mail("b@x", subject="[PATCH RESEND] fix io",
+                          date="Wed, 11 Nov 2026 10:00:00 +0000")]})
+    run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    assert store.newest_series(store.revisions(conn, pid))["root_msgid"] == "b@x"
+    assert snapshot.latest(conn, pid)[2]["standing"]["kind"] == "waiting_reply"

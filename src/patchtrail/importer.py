@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from patchtrail import snapshot, store
+from patchtrail.discover import version_of
 from patchtrail.fetch import compose_for
 from patchtrail.mail import parse_mail, split_mbox
 from patchtrail.projects import detect_project
@@ -90,7 +91,9 @@ def _import_patch(conn, mine, now, base, members, state: Path, report: ImportRep
             existing = store.get_patch(conn, base)
             pid = existing["id"] if existing else store.add_patch(conn, base, now=now)
             created = existing is None
-        rev = store.add_revision(conn, pid, msgid, version=version, subject=root.subject,
+        # A name without -v<N> may still hold a v2: its root's subject says so.
+        rev = store.add_revision(conn, pid, msgid, version=max(version, version_of(root.subject)),
+                                 subject=root.subject,
                                  author=root.from_addr, posted_at=root.date)
         store.upsert_mails(conn, rev, raws, now)
         seen |= _read_seen(state / f"{name}.seen")

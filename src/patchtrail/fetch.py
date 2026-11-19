@@ -13,7 +13,7 @@ import time
 
 from patchtrail import db, store
 from patchtrail.config import Config, Paths, my_addresses
-from patchtrail.discover import discover, merge_by_change_id
+from patchtrail.discover import discover, merge_by_change_id, version_of
 from patchtrail.mail import MailInfo, head_subject, parse_mail, standing, text_body
 from patchtrail.projects import (PatchView, Progress, Trail, TrailResult, detect_project,
                                  get_project)
@@ -251,8 +251,9 @@ class _Run:
         return True
 
     def _sync(self, rev) -> MailInfo | None:
-        """Take the revision's subject, author, posted_at and change-id from its root
-        mail, wherever another thread stored it; return the root, None if not stored."""
+        """Take the revision's subject, version, author, posted_at and change-id from
+        its root mail, wherever another thread stored it; return the root, None if
+        not stored."""
         root_id = rev["root_msgid"]
         thread = store.thread_mails(self.conn, root_id)
         raw = next((bytes(m["raw"]) for m in thread if m["msgid"] == root_id), None)
@@ -261,6 +262,8 @@ class _Run:
         root = parse_mail(raw)
         want = {"subject": root.subject, "author": root.from_addr,
                 "posted_at": root.date or rev["posted_at"]}
+        if root.subject:    # `ptl add` and an import by name alone guess the version
+            want["version"] = version_of(root.subject)
         # The root's own change-id, else one from the author's mails below it. Never
         # one from the rest of the thread or from another revision's thread below
         # (thread_mails stops there): that one names another series. Worked out

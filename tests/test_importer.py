@@ -129,3 +129,13 @@ def test_reimport_keeps_later_edits(conn, old):
     assert [(x["subject"], x["source"]) for x in c] == [("io_uring: cpuset", "search")]
     assert (io["tree_url"], io["tree_branch"], io["tree_source"]) == (
         "https://other.example/linux.git", "other", "auto")
+
+
+def test_version_from_the_root_subject_when_the_name_has_none(conn, old):   # final review I1
+    (old.config / "lkml-watch" / "threads").write_text("erofs e2@x\n")
+    (old.state / "lkml-watch" / "erofs.mbox").write_bytes(mbox(
+        _m("e1@x", "08", subject="[PATCH] erofs-utils: lib: fix"),
+        _m("e2@x", "12", subject="[PATCH v2] erofs-utils: lib: fix", in_reply_to="e1@x")))
+    import_old(conn, MINE, now=1000, old_config=old.config, old_state=old.state)
+    [rev] = store.revisions(conn, store.get_patch(conn, "erofs")["id"])
+    assert (rev["root_msgid"], rev["version"]) == ("e2@x", 2)

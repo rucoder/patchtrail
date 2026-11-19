@@ -95,7 +95,7 @@ def add_revision(conn, patch_id, root_msgid, *, version=1, subject="", author=No
     return cur.lastrowid
 
 
-_REVISION_FIELDS = frozenset({"subject", "author", "posted_at", "change_id"})
+_REVISION_FIELDS = frozenset({"subject", "author", "posted_at", "change_id", "version"})
 
 
 def set_revision(conn, revision_id, **fields):
@@ -117,13 +117,16 @@ def revisions_sharing_change_id(conn):
 
 
 def revisions(conn, patch_id):
+    """Oldest first: by version, then by when it was posted, then as tracked."""
     return conn.execute(
-        "SELECT * FROM revisions WHERE patch_id=? ORDER BY version, id", (patch_id,)
+        "SELECT * FROM revisions WHERE patch_id=?"
+        " ORDER BY version, COALESCE(posted_at, 0), id", (patch_id,)
     ).fetchall()
 
 
 def newest_series(revs):
-    """The newest series revision of a patch's revisions, None if it has none."""
+    """The newest series revision of a patch's revisions (in revisions() order),
+    None if it has none."""
     series = [r for r in revs if r["kind"] == "series"]
     return series[-1] if series else None
 
