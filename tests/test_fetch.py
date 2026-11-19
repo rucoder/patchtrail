@@ -557,3 +557,48 @@ def test_change_id_below_the_root_skips_other_revisions(conn, cfgp):  # item 3
     assert store.revision_by_msgid(conn, "s@x")["change_id"] is None
     assert store.revision_by_msgid(conn, "m@x")["change_id"] == "20261110-fixup"
     assert [p["name"] for p in store.list_patches(conn)] == ["series", "fixup"]
+
+
+# --- fix round 3 --------------------------------------------------------------
+
+@pytest.mark.parametrize("names", [None, ["my-fixup"]], ids=["full-run", "ptl-add-run"])
+def test_fixup_added_after_its_series_keeps_its_identity(conn, cfgp, names):  # repro D
+    series = store.add_patch(conn, "my-series", now=1)
+    store.add_revision(conn, series, "s@x")
+    thread = [make_mail("s@x", subject="[PATCH 0/2] mm: series",
+                        date="Mon, 09 Nov 2026 10:00:00 +0000"),
+              make_mail("m@x", subject="[PATCH] mm: fixup", in_reply_to="s@x",
+                        date="Tue, 10 Nov 2026 10:00:00 +0000", body="change-id: 20261110-fixup\n")]
+    src = FakeSource({"s@x": thread, "m@x": thread})
+    run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
+    fixup = store.add_patch(conn, "my-fixup", now=2)              # added by hand afterwards
+    store.add_revision(conn, fixup, "m@x")
+    rid = run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False,
+                    patch_names=names)
+    assert not any(l.startswith("merged: ") for l in log_lines(conn, rid))
+    assert [p["name"] for p in store.list_patches(conn)] == ["my-series", "my-fixup"]
+    assert store.revision_by_msgid(conn, "m@x")["change_id"] == "20261110-fixup"
+    assert store.revision_by_msgid(conn, "s@x")["change_id"] is None
+
+
+@pytest.mark.parametrize("headers", [
+    {"In-Reply-To": "<offlist@x>", "References": "<a@x> <offlist@x>"},
+    {"In-Reply-To": '<a@x> (Me\'s message of "Mon, 09 Nov 2026 10:00:00 +0000")'},
+    {"References": "<a@x>"}], ids=["ghost-parent", "commented-in-reply-to", "references-only"])
+def test_replies_linked_by_references_stay_in_the_thread(conn, cfgp, headers):  # repro E/F/G
+    pid = store.add_patch(conn, "p", now=1)
+    store.add_revision(conn, pid, "a@x")
+    thread = [make_mail("a@x", subject="[PATCH] fix io", date="Mon, 09 Nov 2026 10:00:00 +0000"),
+              make_mail("r@x", frm="Maint <maint@k.org>", subject="Re: [PATCH] fix io",
+                        date="Wed, 11 Nov 2026 10:00:00 +0000", extra_headers=headers,
+                        body="Applied, thanks!\n\n[1/1] fix io\n      commit: " + "3" * 40 + "\n"),
+              make_mail("r1@x", frm="X <x@y.org>", subject="Re: [PATCH] fix io", in_reply_to="r@x",
+                        date="Thu, 12 Nov 2026 10:00:00 +0000", body="Why?\n")]
+    run_fetch(*cfgp, "cli", source=FakeSource({"a@x": thread}), trails={}, search=nosearch,
+              discover_new=False)
+    state = snapshot.latest(conn, pid)[2]
+    assert state["mails"] == ["a@x", "r1@x", "r@x"]
+    assert (state["standing"]["kind"], state["standing"]["who"]) == ("applied", "Maint")
+    mine = frozenset({"me@example.org"})
+    view = build_view(conn, store.patch_by_id(conn, pid), mine)
+    assert commits_from_mail(view.mails, mine) == [("fix io", "3" * 40)]

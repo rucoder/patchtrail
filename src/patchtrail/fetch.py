@@ -65,12 +65,13 @@ def last_run(conn) -> sqlite3.Row | None:
 
 # --- views --------------------------------------------------------------------
 
-def _below(mails: list[MailInfo], root: str, stop: set[str]) -> list[MailInfo]:
-    """The root and every mail below it through In-Reply-To, in the given order,
-    not entering the threads of the stop msgids."""
+def _below(mails: list[MailInfo], parents: dict[str, str | None], root: str,
+           stop: set[str]) -> list[MailInfo]:
+    """The root and every mail below it through the stored parents, in the given
+    order, not entering the threads of the stop msgids."""
     children: dict[str | None, list[str]] = {}
     for m in mails:
-        children.setdefault(m.in_reply_to, []).append(m.msgid)
+        children.setdefault(parents[m.msgid], []).append(m.msgid)
     seen, todo = {root}, [root]
     while todo:
         for c in children.get(todo.pop(), ()):
@@ -87,9 +88,9 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
     revs = store.revisions(conn, pid)
     series = [r for r in revs if r["kind"] == "series"]
     newest = series[-1] if series else None
-    raws, mails = {}, []
+    raws, parents, mails = {}, {}, []
     for m in store.patch_mails(conn, pid):
-        raws[m["msgid"]] = bytes(m["raw"])
+        raws[m["msgid"]], parents[m["msgid"]] = bytes(m["raw"]), m["in_reply_to"]
         mails.append(parse_mail(raws[m["msgid"]]))
     backports: dict[str, list[str]] = {}
     for r in revs:
@@ -98,7 +99,7 @@ def _load(conn, row) -> tuple[PatchView, list[MailInfo]]:
     newest_mails, subject, author, posted_at, files = mails, "", "", 0, {}
     if newest is not None:
         root = newest["root_msgid"]
-        newest_mails = _below(mails, root, {r["root_msgid"] for r in revs} - {root})
+        newest_mails = _below(mails, parents, root, {r["root_msgid"] for r in revs} - {root})
         author = newest["author"] or ""
         posted_at = newest["posted_at"] or 0
         own = [m for m in newest_mails if author and m.from_addr == author and not m.is_reply]
@@ -176,8 +177,10 @@ class _Run:
                 if not self._fetch(row, rev):
                     not_fetched.add(rev["id"])
         # Second pass: a root mail may have come with any thread of this run.
+        synced = set()
         for row in rows:
             roots = {rev["id"]: self._sync(rev) for rev in revs[row["id"]]}
+            synced.update(roots)
             if any(roots[i] is None and i in not_fetched for i in roots):
                 self.unfetched.add(row["id"])
             series_roots = [roots[r["id"]] for r in revs[row["id"]]
@@ -187,6 +190,11 @@ class _Run:
                 project = detect_project(newest.to_cc, newest.subject)
                 if project != row["project"]:
                     store.set_field(self.conn, row["id"], "project", project)
+        # A change-id taken from below a root before the revision there was tracked
+        # is stale now, also in patches this run did not select.
+        for rev in store.revisions_sharing_change_id(self.conn):
+            if rev["id"] not in synced:
+                self._sync(rev)
         ids = {row["id"] for row in rows}
         merged = merge_by_change_id(self.conn)
         for name in merged:
@@ -219,14 +227,14 @@ class _Run:
         root = parse_mail(raw)
         want = {"subject": root.subject, "author": root.from_addr,
                 "posted_at": root.date or rev["posted_at"]}
-        if rev["change_id"] is None:
-            # The root's own, else one from the author's mails below it. Never one
-            # from the rest of the thread or from another revision's thread below
-            # (thread_mails stops there): that one names another series.
-            below = (parse_mail(bytes(m["raw"])) for m in thread if m["msgid"] != root_id)
-            want["change_id"] = root.change_id or next(
-                (m.change_id for m in below
-                 if m.change_id and root.from_addr and m.from_addr == root.from_addr), None)
+        # The root's own change-id, else one from the author's mails below it. Never
+        # one from the rest of the thread or from another revision's thread below
+        # (thread_mails stops there): that one names another series. Worked out
+        # afresh each time, as the revisions tracked below the root change.
+        below = (parse_mail(bytes(m["raw"])) for m in thread if m["msgid"] != root_id)
+        want["change_id"] = root.change_id or next(
+            (m.change_id for m in below
+             if m.change_id and root.from_addr and m.from_addr == root.from_addr), None)
         store.set_revision(self.conn, rev["id"],
                            **{k: v for k, v in want.items() if v != rev[k]})
         return root

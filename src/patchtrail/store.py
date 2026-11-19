@@ -73,6 +73,14 @@ def set_revision(conn, revision_id, **fields):
         conn.commit()
 
 
+def revisions_sharing_change_id(conn):
+    """The revisions whose change-id a revision of another patch has too."""
+    return conn.execute(
+        "SELECT * FROM revisions WHERE change_id IN (SELECT change_id FROM revisions"
+        " WHERE change_id IS NOT NULL GROUP BY change_id"
+        " HAVING COUNT(DISTINCT patch_id) > 1) ORDER BY id").fetchall()
+
+
 def revisions(conn, patch_id):
     return conn.execute(
         "SELECT * FROM revisions WHERE patch_id=? ORDER BY version, id", (patch_id,)
@@ -149,23 +157,44 @@ def kv_set(conn, key, value):
     conn.commit()
 
 
+def _parent(m, known) -> str | None:
+    """The mail's parent in its thread, stored as mails.in_reply_to: In-Reply-To if
+    that mail is known, else the last known References entry (lore keeps replies
+    to mails it never got), else In-Reply-To as given."""
+    if m.in_reply_to and known(m.in_reply_to):
+        return m.in_reply_to
+    for ref in reversed(m.references):
+        if ref != m.msgid and known(ref):
+            return ref
+    return m.in_reply_to
+
+
 def upsert_mails(conn, revision_id, raws, now) -> list[str]:
-    """Store mails of a revision; return the msgids that were not stored before."""
+    """Store mails of a revision; return the msgids that were not stored before.
+    A mail stored before gets a better parent when this batch brings one."""
     from patchtrail.mail import parse_mail
 
+    mails = [(raw, m) for raw in raws if (m := parse_mail(raw)).msgid]
+    batch = {m.msgid for _, m in mails}
+
+    def known(msgid):
+        return msgid in batch or conn.execute(
+            "SELECT 1 FROM mails WHERE msgid=?", (msgid,)).fetchone() is not None
+
     new = []
-    for raw in raws:
-        m = parse_mail(raw)
-        if not m.msgid:
-            continue
+    for raw, m in mails:
+        parent = _parent(m, known)
         cur = conn.execute(
             "INSERT OR IGNORE INTO mails (msgid, revision_id, in_reply_to, date,"
             " from_name, from_addr, subject, raw, first_seen) VALUES (?,?,?,?,?,?,?,?,?)",
-            (m.msgid, revision_id, m.in_reply_to, m.date, m.from_name, m.from_addr,
+            (m.msgid, revision_id, parent, m.date, m.from_name, m.from_addr,
              m.subject, raw, now),
         )
         if cur.rowcount:
             new.append(m.msgid)
+        elif parent is not None and known(parent):
+            conn.execute("UPDATE mails SET in_reply_to=? WHERE msgid=? AND in_reply_to IS NOT ?",
+                         (parent, m.msgid, parent))
     conn.commit()
     return new
 

@@ -125,3 +125,19 @@ def test_thread_and_patch_mails_follow_replies_wherever_stored(conn):   # R24
     assert [r["msgid"] for r in store.thread_mails(conn, "s@x")] == ["s@x", "s1@x"]
     assert [r["msgid"] for r in store.patch_mails(conn, fix)] == ["m@x", "m1@x"]
     assert [r["msgid"] for r in store.patch_mails(conn, series)] == ["s@x", "s1@x"]
+
+
+def test_upsert_mails_stores_the_parent_the_thread_has(conn):
+    pid = store.add_patch(conn, "p", now=1)
+    rid = store.add_revision(conn, pid, "a@x")
+    parent = lambda msgid: conn.execute(  # noqa: E731
+        "SELECT in_reply_to FROM mails WHERE msgid=?", (msgid,)).fetchone()[0]
+    ghost = make_mail("r@x", extra_headers={"In-Reply-To": "<offlist@x>",
+                                            "References": "<a@x> <offlist@x>"})
+    store.upsert_mails(conn, rid, [ghost], 1)                     # nothing known: as given
+    assert parent("r@x") == "offlist@x"
+    store.upsert_mails(conn, rid, [
+        make_mail("a@x"), ghost,                                  # r@x: refreshed to the root
+        make_mail("q@x", in_reply_to="r@x", extra_headers={"References": "<a@x>"}),
+        make_mail("n@x", extra_headers={"References": "<gone@x>"})], 2)
+    assert [parent(i) for i in ("a@x", "r@x", "q@x", "n@x")] == [None, "a@x", "r@x", None]

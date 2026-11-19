@@ -16,6 +16,7 @@ _THANKS_ITEM = re.compile(r"^\s*\[\d+/\d+\]\s+(.+?)\s*$")
 _THANKS_SHA = re.compile(
     r"^\s+(?:commit:\s*|\S*/commit/)([0-9a-f]{12,40})\s*$", re.IGNORECASE)
 _PATCH_N_OF_M = re.compile(r"\s[1-9]\d*/\d+\]")
+_MSGID_TOKEN = re.compile(r"<([^<>\s]+)>")
 
 
 def split_mbox(data: bytes) -> list[bytes]:
@@ -97,6 +98,7 @@ class MailInfo:
     applied_commits: tuple[tuple[str, str], ...]
     change_id: str | None
     to_cc: tuple[str, ...]
+    references: tuple[str, ...] = ()
 
 
 def _thanks_commits(lines: list[str]) -> tuple[tuple[str, str], ...]:
@@ -128,7 +130,10 @@ def parse_mail(raw: bytes) -> MailInfo:
         if l.lower().startswith("change-id: "):
             change_id = l[len("change-id: "):].strip() or None
             break
-    irt = _header(msg, "In-Reply-To").strip("<>")
+    # In-Reply-To may carry a comment after the id: <id> (Name's message of "date").
+    irt = _header(msg, "In-Reply-To")
+    tokens = _MSGID_TOKEN.findall(irt)
+    irt = tokens[0] if tokens else irt.strip().strip("<>")
     recipients = email.utils.getaddresses(
         [str(v) for v in msg.get_all("To", []) + msg.get_all("Cc", [])])
     return MailInfo(
@@ -144,6 +149,7 @@ def parse_mail(raw: bytes) -> MailInfo:
         applied_commits=_thanks_commits(lines) if is_reply else (),
         change_id=change_id,
         to_cc=tuple(a.lower() for _, a in recipients if a),
+        references=tuple(_MSGID_TOKEN.findall(_header(msg, "References"))),
     )
 
 

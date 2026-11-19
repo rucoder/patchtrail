@@ -109,3 +109,12 @@ def test_encoded_display_name_with_comma():
                              to="=?utf-8?q?Doe=2C_J?= <j@x.org>, k@x.org"))
     assert (m.from_name, m.from_addr) == ("M\xfcller, Hans", "h@x.org")
     assert m.to_cc == ("j@x.org", "k@x.org")
+
+
+def test_in_reply_to_and_references_tokens():
+    m = parse_mail(make_mail("r@x", extra_headers={
+        "In-Reply-To": '<a@x> (Me\'s message of "Mon, 09 Nov 2026 10:00:00 +0000")',
+        "References": "<z@x>\n <a@x>"}))
+    assert (m.in_reply_to, m.references) == ("a@x", ("z@x", "a@x"))
+    assert (parse_mail(make_mail("s@x")).in_reply_to, parse_mail(make_mail("s@x")).references) == (
+        None, ())
