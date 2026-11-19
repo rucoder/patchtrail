@@ -3,15 +3,16 @@
 
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
 
-from patchtrail import db
+from patchtrail import db, store
 from patchtrail.config import Paths, load_config, my_addresses, paths
 from patchtrail.importer import import_old
-from patchtrail.projects.kernel.repo import KernelRepo
+from patchtrail.projects.kernel.repo import GitError, KernelRepo
 
 MIN_GIT = (2, 40)
 
@@ -66,28 +67,45 @@ def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> in
         print(msg, file=sys.stderr)
         return 1
     p = paths()
+    cfg = load_config(p)
+    if not no_seed and seed is None:
+        default = _xdg("XDG_STATE_HOME", ".local/state") / "stable-watch" / "linux.git"
+        if cfg.seed:
+            seed = Path(cfg.seed).expanduser()
+        elif default.is_dir():
+            seed = default
+    if no_seed:
+        seed = None
+    seeding = seed is not None and not p.linux.exists()
+    if seeding:
+        r = subprocess.run(["git", "-C", str(seed), "rev-parse", "--git-dir"],
+                           capture_output=True, text=True)
+        if not seed.is_dir() or r.returncode:
+            why = r.stderr.strip() if seed.is_dir() else "no such directory"
+            print(f"ptl: cannot seed from {seed}: {why}", file=sys.stderr)
+            return 1
     p.home.mkdir(parents=True, exist_ok=True)
-    if write_default_config(p, sorted(my_addresses(load_config(p)))):
+    if write_default_config(p, sorted(my_addresses(cfg))):
         print(f"wrote {p.config}")
     cfg = load_config(p)
     conn = db.connect(p.db)
     try:
-        if not no_seed and seed is None:
-            default = _xdg("XDG_STATE_HOME", ".local/state") / "stable-watch" / "linux.git"
-            if cfg.seed:
-                seed = Path(cfg.seed).expanduser()
-            elif default.is_dir():
-                seed = default
-        if no_seed:
-            seed = None
         if not p.linux.exists():
-            if seed is not None:
+            if seeding:
                 print(f"seeding from {seed} (hardlinks, no copy)")
-            KernelRepo(p.linux).ensure(seed)
+            try:
+                KernelRepo(p.linux).ensure(seed)
+            except GitError as e:
+                shutil.rmtree(p.linux, ignore_errors=True)
+                print(f"ptl: cannot seed from {seed}: {e}", file=sys.stderr)
+                return 1
         threads = _xdg("XDG_CONFIG_HOME", ".config") / "lkml-watch" / "threads"
         if do_import or (do_import is None and threads.exists()):
             r = import_old(conn, my_addresses(cfg), now=int(time.time()))
-            print(f"imported {len(r.patches)} patches")
+            if r.patches or r.fixes:
+                print(f"imported {len(r.patches)} patches")
+            else:
+                print(f"nothing new to import ({len(store.list_patches(conn))} already tracked)")
     finally:
         conn.close()
     print("next: `ptl fetch` (the first run fetches mainline and stable; with a seed this takes "

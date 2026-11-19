@@ -91,3 +91,49 @@ def test_setup_command(kfix, capsys):
     assert paths().config.exists()
     with pytest.raises(SystemExit):
         cli.main(["setup", "--seed", str(kfix.mainline), "--no-seed"])
+
+
+@pytest.mark.parametrize("kind", ["missing", "plain-dir"])
+def test_bad_seed_fails_cleanly(tmp_path, capsys, kind):
+    seed = tmp_path / "seed"
+    if kind == "plain-dir":
+        seed.mkdir()
+    assert run_setup(seed=seed, no_seed=False, do_import=False) == 1
+    cap = capsys.readouterr()
+    assert f"ptl: cannot seed from {seed}:" in cap.err
+    assert "Traceback" not in cap.err + cap.out
+    assert not paths().linux.exists()
+    assert not paths().config.exists()
+
+
+def test_failed_ensure_removes_partial_clone(kfix, monkeypatch, capsys):
+    from patchtrail.projects.kernel.repo import GitError, KernelRepo
+
+    def boom(self, seed):
+        self.path.mkdir(parents=True)
+        raise GitError("clone broke")
+
+    monkeypatch.setattr(KernelRepo, "ensure", boom)
+    assert run_setup(seed=kfix.mainline, no_seed=False, do_import=False) == 1
+    assert "ptl: cannot seed from" in capsys.readouterr().err
+    assert not paths().linux.exists()
+
+
+def test_setup_twice_with_old_scripts(kfix, old_scripts_home, capsys):
+    from patchtrail import snapshot
+
+    def counts():
+        c = db.connect(paths().db)
+        rows = store.list_patches(c)
+        return (len(rows), [len(store.revisions(c, r["id"])) for r in rows],
+                [len(store.patch_mails(c, r["id"])) for r in rows],
+                c.execute("SELECT count(*) FROM snapshots").fetchone()[0],
+                [bool(snapshot.unread(c, r["id"])) for r in rows])
+
+    assert run_setup(seed=None, no_seed=True, do_import=None) == 0
+    first = counts()
+    assert first[0] == 1
+    assert "imported 1 patches" in capsys.readouterr().out
+    assert run_setup(seed=None, no_seed=True, do_import=None) == 0
+    assert counts() == first
+    assert "nothing new to import (1 already tracked)" in capsys.readouterr().out
