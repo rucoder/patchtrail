@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="us-ascii"?>
+<feed
+xmlns="http://www.w3.org/2005/Atom"
+xmlns:thr="http://purl.org/syndication/thread/1.0"><title>s:FAILED AND s:patch - search results</title><link
+rel="alternate"
+type="text/html"
+href="https://lore.kernel.org/stable/?q=s:FAILED+AND+s:patch"/><link
+rel="self"
+href="https://lore.kernel.org/stable/?q=s:FAILED+AND+s:patch&amp;x=A"/><id>urn:uuid:886bb2ca-3baf-3025-1db6-01e915e55485</id><updated>2026-11-19T17:08:13Z</updated><entry><author><name>Greg Kroah-Hartman</name><email>gregkh@linuxfoundation.org</email></author><title>[PATCH 5.10 1840/1848] drm/msm/dp: stop link training after link training 2 failed</title><updated>2026-11-19T04:24:01Z</updated><link
+href="https://lore.kernel.org/stable/20261118150036.603119570@linuxfoundation.org/"/><id>urn:uuid:5dabda01-3e76-9894-6a24-c50d742fae48</id><thr:in-reply-to
+ref="urn:uuid:0f6e755c-8e11-f3d8-cce7-b888a500d2e2"
+href="https://lore.kernel.org/stable/20261118145911.150052362@linuxfoundation.org/"/><content
+type="xhtml"><div
+xmlns="http://www.w3.org/1999/xhtml"><pre
+style="white-space:pre-wrap">5.10-stable review patch.  If anyone has any objections, please let me know.
+
+------------------
+
+From: Kuogee Hsieh &lt;quic_khsieh@quicinc.com&gt;
+
+commit 9051d629dbf7a998a40f7eac65a9512b01bc3bb8 upstream.
+
+Each DP link training contains link training 1 followed by link
+training 2.  There is maximum of 5 retries of DP link training
+before declared link training failed. It is required to stop link
+training at end of link training 2 if it is failed so that next
+link training 1 can start freshly. This patch fixes link compliance
+test  case 4.3.1.13 (Source Device Link Training EQ Fallback Test).
+
+Changes in v10:
+--  group into one series
+
+Changes in v11:
+-- drop drm/msm/dp: dp_link_parse_sink_count() return immediately if aux read
+
+Fixes: 2e0adc765d88 (&#34;drm/msm/dp: do not end dp link training until video is ready&#34;)
+Signed-off-by: Kuogee Hsieh &lt;quic_khsieh@quicinc.com&gt;
+Reviewed-by: Stephen Boyd &lt;swboyd@chromium.org&gt;
+Link: <a
+href="https://lore.kernel.org/r/1642531648-8448-5-git-send-email-quic_khsieh@quicinc.com">https://lore.kernel.org/r/1642531648-8448-5-git-send-email-quic_khsieh@quicinc.com</a>
+Signed-off-by: Dmitry Baryshkov &lt;dmitry.baryshkov@linaro.org&gt;
+Signed-off-by: Greg Kroah-Hartman &lt;gregkh@linuxfoundation.org&gt;
+---
+ drivers/gpu/drm/msm/dp/dp_ctrl.c |    3 +++
+ 1 file <a href="https://lore.kernel.org/stable/20261118150036.603119570@linuxfoundation.org/#related">changed</a>, 3 insertions(+)
+
+--- a/drivers/gpu/drm/msm/dp/dp_ctrl.c
++++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c
+@@ -1732,6 +1732,9 @@ int dp_ctrl_on_link(struct dp_ctrl *dp_c
+ 				/* end with failure */
+ 				break; /* lane == 1 already */
+ 			}
++
++			/* stop link training before start re training  */
++			dp_ctrl_clear_training_pattern(ctrl);
+ 		}
+ 
+ 		rc = dp_ctrl_reinitialize_mainlink(ctrl);
+
+
+</pre></div></content></entry></feed>

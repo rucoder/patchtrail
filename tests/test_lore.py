@@ -163,3 +163,16 @@ def test_search_entry_fields_real_format():
                                                  "2025-01-20T13:57:58Z", False)
     assert e.href == "https://lore.kernel.org/stable/2025012032-tidal-chatting-cba2@gregkh/"
 
+
+def test_summary_is_the_text_of_lores_xhtml_content():
+    from patchtrail.discover import backport_of
+
+    page = (DATA / "lore-stable-review.atom").read_bytes()
+    [e] = search("stable", "s:x", urlopen=PagedUrlopen(page, END_PAGE))
+    assert e.is_reply and e.subject.startswith("[PATCH 5.10 1840/1848] drm/msm/dp:")
+    assert "\ncommit 9051d629dbf7a998a40f7eac65a9512b01bc3bb8 upstream.\n" in e.summary
+    assert "Link: https://lore.kernel.org/r/1642531648-8448-5-git-send-email" in e.summary
+    assert "+++ b/drivers/gpu/drm/msm/dp/dp_ctrl.c" in e.summary and "<" not in e.summary[:40]
+    assert backport_of(e.subject, e.summary) == ("5.10", "9051d629dbf7a998a40f7eac65a9512b01bc3bb8")
+    [f, _] = search("stable", "s:x", urlopen=PagedUrlopen(FAILED_PAGE, END_PAGE))
+    assert "git cherry-pick -x b8ed9da102beb2d0926a1d7a7e652392190151c0" in f.summary

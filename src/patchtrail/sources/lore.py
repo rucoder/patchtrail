@@ -72,6 +72,8 @@ def _parse_feed(data: bytes) -> list[Entry]:
         subject = " ".join(e.findtext("a:title", "", NS).split())
         link = e.find("a:link", NS)
         href = link.get("href", "") if link is not None else ""
+        # lore sends <content type="xhtml"><div><pre>…: the text is in nested elements.
+        content = e.find("a:content", NS)
         entries.append(Entry(
             msgid=parse_msgid(href),
             subject=subject,
@@ -80,7 +82,7 @@ def _parse_feed(data: bytes) -> list[Entry]:
             is_reply=e.find("thr:in-reply-to", NS) is not None
             or subject.lower().startswith("re:"),
             href=href,
-            summary=e.findtext("a:content", "", NS),
+            summary="".join(content.itertext()) if content is not None else "",
         ))
     return entries
 
