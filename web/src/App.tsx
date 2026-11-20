@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { act, getPatches, getStatus } from "./api";
 import { AppContext, type AppState } from "./app-context";
+import { Board } from "./components/Board";
 import { TopBar } from "./components/TopBar";
 import { defaultFilters, visible, type Filters } from "./lib/filters";
 import { parseRoute, routePath, type Route } from "./lib/route";
@@ -111,10 +112,8 @@ export function App() {
             navigate({ name, tab: "overview" });
           }}
         />
-        {/* Tasks 10 to 12: the board, the detail panel and the thread view go here. */}
-        <div className="pbody muted">
-          {shown.length} patches{route.name ? ` · selected: ${route.name}` : ""}
-        </div>
+        <Board cards={shown} />
+        {/* Tasks 11 and 12: the detail panel and the thread view go here. */}
       </div>
     </AppContext.Provider>
   );

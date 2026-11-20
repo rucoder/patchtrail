@@ -105,3 +105,15 @@ html, body { margin: 0; background: var(--bg-secondary); }
 .pt .modal input:not([type=checkbox]), .pt .modal textarea { font: inherit; padding: 3px 6px;
   border: 1px solid var(--border); border-radius: 4px; background: var(--bg-primary); color: var(--text-primary); }
 .pt .modal .row { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* board */
+.pt .board .col { height: calc(100vh - 140px); min-height: 230px; overflow-y: auto; }
+.pt .crd { cursor: pointer; }
+.pt .crd:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.pt .crd.idle { opacity: .6; }
+.pt .crd .standing { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt .crd .links { font-size: 11px; }
+.pt .crd .following { font-size: 10px; border: 1px solid var(--border); border-radius: 8px; padding: 0 5px; }
+.pt button.more { display: block; width: 100%; border: 0; background: none; font: inherit; font-size: 11px;
+  color: var(--text-secondary); cursor: pointer; padding: 4px; text-align: center; }
+.pt button.more:hover { color: var(--text-primary); }

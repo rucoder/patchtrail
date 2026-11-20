@@ -79,15 +79,16 @@ describe("App", () => {
   });
 
   it("reads the route from the URL and follows popstate", async () => {
+    getPatches.mockResolvedValue({ patches: [card("iowq"), card("other")] });
     history.replaceState(null, "", "/p/iowq/thread");
-    render(<App />);
+    const { container } = render(<App />);
     await flush();
-    expect(screen.getByText(/selected: iowq/)).toBeTruthy();
+    expect(container.querySelector(".crd.sel .t")!.textContent).toBe("iowq");
     history.pushState(null, "", "/p/other");
     await act(async () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
-    expect(screen.getByText(/selected: other/)).toBeTruthy();
+    expect(container.querySelector(".crd.sel .t")!.textContent).toBe("other");
   });
 
   it("shows a connection error when the service is down and clears it on recovery", async () => {
