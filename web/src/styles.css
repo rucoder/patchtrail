@@ -80,7 +80,10 @@ html, body { margin: 0; background: var(--bg-secondary); }
 .pt .mh .who { font-weight: 600; }
 .pt .mh .sp { flex: 1; }
 .pt pre.mb { margin: 0; padding: 8px 12px; font: 12px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; color: var(--text-primary); background: var(--bg-secondary); }
-.pt .q1 { color: #3e7bfa; } .pt .q2 { color: #0aa5b5; }
+.pt .q1 { color: #3e7bfa; } .pt .q2 { color: #0aa5b5; } .pt .q3 { color: #2da44e; }
+.pt .glabel { margin: 14px 0 4px; font-size: 12px; color: var(--text-secondary); }
+.pt .snip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.pt .fold { margin: 2px 12px 8px; }
 .pt .dg { font-weight: 700; } .pt .df { color: #3e7bfa; } .pt .dh { color: #0aa5b5; }
 .pt .da { color: #2da44e; } .pt .dd { color: #e5484d; }
 .pt .tr { color: #b04bd0; font-weight: 600; } .pt .tf { color: #c79a00; font-weight: 600; }

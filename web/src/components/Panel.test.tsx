@@ -10,7 +10,7 @@ import type { Tab } from "../lib/route";
 import type { Card, Detail } from "../types";
 import { Panel } from "./Panel";
 
-vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getPatch: vi.fn() }));
+vi.mock("../api", async (orig) => ({ ...(await orig<typeof import("../api")>()), getPatch: vi.fn(), getMails: vi.fn() }));
 const getPatch = vi.mocked(api.getPatch);
 const navigate = vi.fn();
 const runAction = vi.fn();
@@ -155,9 +155,10 @@ describe("Panel", () => {
     expect(navigate).toHaveBeenCalledWith({ name: "p", tab: "thread" });
   });
 
-  it("shows the thread slot on the thread tab", async () => {
+  it("shows the thread on the thread tab", async () => {
+    vi.mocked(api.getMails).mockResolvedValue({ groups: [] });
     open(card("p"), detail("p"), "thread");
-    expect(await screen.findByTestId("thread-slot")).toBeTruthy();
+    expect(await screen.findByText("No mails yet.")).toBeTruthy();
   });
 
   it("shows a load error", async () => {

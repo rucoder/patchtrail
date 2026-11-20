@@ -8,7 +8,7 @@ import type { Card, Detail } from "../types";
 import { History } from "./History";
 import { Overview } from "./Overview";
 import { PanelHeader } from "./PanelHeader";
-import { ThreadSlot } from "./ThreadSlot";
+import { Thread } from "./Thread";
 
 type Props = { height: number; onResize: (h: number) => void; onResizeEnd: (h: number) => void };
 const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
@@ -25,6 +25,7 @@ function Open({ name, tab, height, onResize, onResizeEnd }: Props & { name: stri
   const [detail, setDetail] = useState<Detail | null>(null);
   const [local, setLocal] = useState<Card | null>(null); // the card an action just returned
   const [error, setError] = useState<string | null>(null);
+  const [tick, setTick] = useState(0); // bumped after each detail load: the thread reloads with it
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -33,6 +34,7 @@ function Open({ name, tab, height, onResize, onResizeEnd }: Props & { name: stri
       const d = await getPatch(name);
       if (s === seq.current) {
         setDetail(d);
+        setTick((t) => t + 1);
         setError(null);
       }
     } catch (e) {
@@ -131,7 +133,7 @@ function Open({ name, tab, height, onResize, onResizeEnd }: Props & { name: stri
           ) : tab === "history" ? (
             <History d={detail} />
           ) : (
-            <ThreadSlot name={name} />
+            <Thread name={name} tick={tick} />
           )}
         </div>
       </div>
