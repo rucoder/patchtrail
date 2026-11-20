@@ -383,7 +383,31 @@ def test_uninstall():
     assert not service.unit_path().exists()
     assert run.calls == [["systemctl", "--user", "disable", "--now", "patchtrail.service"],
                          ["systemctl", "--user", "daemon-reload"]]
-    service.uninstall(FakeRun())          # not installed: still fine
+
+
+class _DisableFails(FakeRun):
+    def __call__(self, argv, **kw):
+        self.calls.append(list(argv))
+        rc = 1 if "disable" in argv else 0
+        return subprocess.CompletedProcess(argv, rc, "", "no such unit")
+
+
+def test_uninstall_never_installed_is_quiet():
+    run = _DisableFails()
+    out = service.uninstall(run)
+    assert out == ["patchtrail.service was not installed"]
+    assert run.calls[-1] == ["systemctl", "--user", "daemon-reload"]
+
+
+def test_uninstall_half_installed_cleans_up():
+    service.unit_path().parent.mkdir(parents=True, exist_ok=True)
+    service.unit_path().write_text("x")
+
+    run = _DisableFails()
+    out = service.uninstall(run)
+    assert not service.unit_path().exists()
+    assert run.calls[-1] == ["systemctl", "--user", "daemon-reload"]
+    assert "no such unit" in out[0]
 
 
 def test_status_and_logs_argv():

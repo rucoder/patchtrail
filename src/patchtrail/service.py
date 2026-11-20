@@ -230,11 +230,20 @@ def install(cfg, run=subprocess.run) -> list[str]:
 
 
 def uninstall(run=subprocess.run) -> list[str]:
-    _check(run, ["systemctl", "--user", "disable", "--now", UNIT])
     path = unit_path()
+    existed = path.exists()
+    out = []
+    try:
+        r = run(["systemctl", "--user", "disable", "--now", UNIT], capture_output=True, text=True)
+    except FileNotFoundError:
+        raise ServiceError("systemctl not found; is systemd available?") from None
+    if r.returncode and existed:
+        detail = (r.stderr or r.stdout or "").strip()
+        out.append(f"systemctl disable --now {UNIT} failed ({r.returncode}): {detail}")
     path.unlink(missing_ok=True)
     _check(run, ["systemctl", "--user", "daemon-reload"])
-    return [f"stopped and removed {UNIT}"]
+    out.append(f"stopped and removed {UNIT}" if existed else f"{UNIT} was not installed")
+    return out
 
 
 def status(run=subprocess.run) -> int:
