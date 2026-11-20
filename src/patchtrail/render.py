@@ -258,17 +258,26 @@ def _branch_text(e: dict) -> list[str]:
     return list(e.get("detail") or []) or [st.replace("_", " ")]
 
 
-def _mainline(c: dict) -> list[str]:
+_STABLE_HINT = "; stable takes nothing before it reaches mainline"
+
+
+def mainline_phrase(c: dict, *, branch_only: bool = False) -> str:
+    """Where a kernel commit stands relative to mainline, as one phrase. branch_only:
+    name a maintainer tree by its branch, not its URL and branch."""
     where = c["where"]
     if where == "mainline":
-        return [f"    mainline: {c.get('release') or 'yes, after the last tag'}"]
+        return c.get("release") or "yes, after the last tag"
     if where == "next":
-        return ["    mainline: only in linux-next; stable takes nothing before it "
-                "reaches mainline"]
+        return "only in linux-next"
     if where.startswith("tree:"):
-        return [f"    mainline: only in {where[5:]}; stable takes nothing before it "
-                "reaches mainline"]
-    return ["    mainline: not yet; stable takes nothing before it reaches mainline"]
+        tree = where[5:]
+        return "only in " + (tree.rsplit(" ", 1)[-1] if branch_only else tree)
+    return "not yet"
+
+
+def _mainline(c: dict) -> list[str]:
+    phrase = mainline_phrase(c)
+    return [f"    mainline: {phrase}" + ("" if c["where"] == "mainline" else _STABLE_HINT)]
 
 
 def kernel_lines(state: dict, *, verbose: bool = False) -> list[str]:

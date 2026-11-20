@@ -246,3 +246,22 @@ def test_run_log(conn):
     assert [x["line"] for x in lines] == ["l0", "l1", "l2"]
     assert views.run_log(conn, rid, lines[0]["n"])["lines"] == lines[1:]
     assert views.run_log(conn, 999, 0) is None
+
+
+@pytest.mark.parametrize("where, stage, release, project, note", [
+    ("tree:git://git.kernel.org/x/linux.git io_uring-7.4", "accepted", None, "kernel",
+     "mainline: only in io_uring-7.4"),
+    ("next", "accepted", None, "kernel", "mainline: only in linux-next"),
+    ("mainline", "released", "v6.19-rc1", "kernel", "mainline: v6.19-rc1"),
+    ("mainline", "applied", None, "kernel", "mainline: yes, after the last tag"),
+    ("upstream", "released", "v1.2", "erofs-utils", "applied upstream"),
+    ("missing", "accepted", None, "kernel", "mainline: not yet"),
+    (None, None, None, "kernel", "mainline: not yet"),
+])
+def test_applied_step_note(conn, where, stage, release, project, note):
+    pid = _new(conn, "p", project=project)
+    commits = [{"sha": "a" * 40, "subject": "s", "where": where, "stage": stage,
+                "release": release, "stable": False, "cc": None, "fixes": []}] if where else []
+    snapshot.record(conn, pid, _state("accepted", ["p@x"], "t", commits=commits), 5)
+    steps = views.detail(conn, store.get_patch(conn, "p"), frozenset(), now=NOW)["steps"]
+    assert next(s for s in steps if s["stage"] == "applied")["note"] == note

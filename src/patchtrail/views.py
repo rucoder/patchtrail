@@ -139,6 +139,15 @@ def _changes_t(conn, changes, state) -> list[dict]:
              "flags": c.flags} for c in changes]
 
 
+def _applied_note(commits: list[dict]) -> str:
+    live = [c for c in commits if c["where"] != "missing"]
+    if live and live[-1]["where"] == "upstream":
+        return "applied upstream" if live[-1]["stage"] in ("applied", "released") \
+            else "mainline: not yet"
+    return "mainline: " + render.mainline_phrase(live[-1], branch_only=True) if live \
+        else "mainline: not yet"
+
+
 def _steps(conn, row, state, stages, revs) -> list[dict]:
     pid = row["id"]
     seen = {r[0] for r in conn.execute(
@@ -150,12 +159,11 @@ def _steps(conn, row, state, stages, revs) -> list[dict]:
         "ORDER BY id", (pid,)) if s in stages]
     series = [r for r in revs if r["kind"] == "series"]
     commits = state["commits"] if state else []
-    live = [c for c in commits if c["where"] != "missing"]
     settled = [e["state"] in _SETTLED for per in (state["branches"] if state else {}).values()
                for e in per.values()]
     notes = {
         "accepted": row["tree_branch"],
-        "applied": live[-1]["where"] if live else "mainline: not yet",
+        "applied": _applied_note(commits),
         "released": commits[-1].get("release") if commits else None,
         "backports": f"{sum(settled)} of {len(settled)} branches settled" if settled else None,
     }
