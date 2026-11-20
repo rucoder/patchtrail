@@ -350,6 +350,9 @@ class _Run:
             self.progress.log(f"{row['name']}: removed during the run")
             return
         row = fresh
+        # The trail worked from the skips read before the repos phase; a "won't backport"
+        # or "backport again" made since then wins too.
+        fragment = _apply_skips(fragment, store.skips(self.conn, row["id"]))
         if (view.prev_state is None and row["read_on_first_snapshot"]
                 and (failed or row["id"] in self.unfetched)):
             # A first snapshot from half a run would use up read_on_first_snapshot,
@@ -454,7 +457,9 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
     """One fetch run; returns its id. Raises Busy when another run holds the lock.
     echo is called with each progress line as it is logged. lore_only fetches the
     threads and records the patches' states with their last trail data, without
-    preparing or following any trail (`ptl add`: seconds, not the kernel's fetch)."""
+    preparing or following any trail (`ptl add`: seconds, not the kernel's fetch).
+    Only a run of everything (discovery, every patch, the trails) is marked full:
+    the schedule and the page's "fetched" time go by full runs alone."""
     source = LoreSource() if source is None else source
     search = lore.search if search is None else search
     conn = db.connect(paths.db)
@@ -463,9 +468,10 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
             # The lock proves that no process runs these any more.
             conn.execute("UPDATE runs SET status='interrupted', finished_at=?"
                          " WHERE status='running'", (int(now()),))
-            run_id = conn.execute("INSERT INTO runs (pid, trigger, started_at, status)"
-                                  " VALUES (?,?,?,'running')",
-                                  (os.getpid(), trigger, int(now()))).lastrowid
+            full = patch_names is None and discover_new and not lore_only
+            run_id = conn.execute("INSERT INTO runs (pid, trigger, started_at, status, full)"
+                                  " VALUES (?,?,?,'running',?)",
+                                  (os.getpid(), trigger, int(now()), int(full))).lastrowid
             conn.commit()
             progress = DbProgress(conn, run_id, now, echo)
             try:

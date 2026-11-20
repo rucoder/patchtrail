@@ -5,7 +5,6 @@ import time
 
 from patchtrail import render, snapshot, store
 from patchtrail.config import Config
-from patchtrail.fetch import last_run
 from patchtrail.mail import text_body
 from patchtrail.projects import get_project
 
@@ -29,26 +28,32 @@ def run_dict(row) -> dict:
 
 
 def next_fetch_at(conn, interval_s: float, now: int) -> int:
-    """The newest run's start plus the interval, whatever its trigger or status."""
-    run = last_run(conn)
+    """The newest full run's start plus the interval, whatever its trigger or status.
+    A partial run (`ptl add`, POST /api/patches, `ptl fetch NAME`) does not postpone it."""
+    run = conn.execute("SELECT started_at FROM runs WHERE full=1 ORDER BY id DESC LIMIT 1"
+                       ).fetchone()
     return int(run["started_at"] + interval_s) if run else now
 
 
 def status(conn, *, interval_hours: float, now: int, starting: bool, version: str) -> dict:
+    """last_run is the newest ok full run (the page's "fetched"). error is the newest full
+    run that failed, or was interrupted for a reason (killed, crashed, stopped with the
+    service), when no ok full run came after it; a ^C leaves no reason and no error."""
     one = lambda sql: conn.execute(sql).fetchone()          # noqa: E731
     running = one("SELECT * FROM runs WHERE status='running' ORDER BY id DESC LIMIT 1")
-    done = one("SELECT * FROM runs WHERE status != 'running' ORDER BY id DESC LIMIT 1")
-    failed = one("SELECT * FROM runs WHERE status='failed' AND id > "
-                 "COALESCE((SELECT MAX(id) FROM runs WHERE status='ok'), 0) "
-                 "ORDER BY id DESC LIMIT 1")
+    done = one("SELECT * FROM runs WHERE full=1 AND status='ok' ORDER BY id DESC LIMIT 1")
+    bad = one("SELECT * FROM runs WHERE full=1 AND (status='failed' OR "
+              "(status='interrupted' AND error IS NOT NULL)) AND id > "
+              "COALESCE((SELECT MAX(id) FROM runs WHERE full=1 AND status='ok'), 0) "
+              "ORDER BY id DESC LIMIT 1")
     return {
         "version": version, "now": now, "interval_hours": interval_hours,
         "next_fetch_at": next_fetch_at(conn, interval_hours * 3600, now),
         "running": run_dict(running) if running else None,
         "starting": starting,
         "last_run": run_dict(done) if done else None,
-        "error": ({"run_id": failed["id"], "at": failed["finished_at"] or failed["started_at"],
-                   "error": failed["error"] or ""} if failed else None),
+        "error": ({"run_id": bad["id"], "at": bad["finished_at"] or bad["started_at"],
+                   "error": bad["error"] or "", "status": bad["status"]} if bad else None),
     }
 
 

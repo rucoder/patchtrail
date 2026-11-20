@@ -7,7 +7,7 @@ import time
 from importlib import resources
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Where the migrations are read from; None means the package's schema directory.
 # Tests point it at a directory of their own.

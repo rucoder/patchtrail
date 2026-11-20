@@ -206,9 +206,10 @@ def test_snippet():
     assert views.snippet("x" * 200) == "x" * 120 and views.snippet("> a\n") == ""
 
 
-def _run(conn, trigger, started, status, finished=None, error=None):
-    cur = conn.execute("INSERT INTO runs (pid, trigger, started_at, finished_at, status, error)"
-                       " VALUES (1,?,?,?,?,?)", (trigger, started, finished, status, error))
+def _run(conn, trigger, started, status, finished=None, error=None, full=1):
+    cur = conn.execute("INSERT INTO runs (pid, trigger, started_at, finished_at, status, error,"
+                       " full) VALUES (1,?,?,?,?,?,?)",
+                       (trigger, started, finished, status, error, full))
     conn.commit()
     return cur.lastrowid
 
@@ -221,12 +222,12 @@ def test_status_next_fetch_and_error(conn):
     s = _status(conn)
     assert s["next_fetch_at"] == NOW and s["running"] is None and s["last_run"] is None
     assert s["error"] is None
-    _run(conn, "cli", 1000, "ok", 1100)
+    ok = _run(conn, "cli", 1000, "ok", 1100)
     assert _status(conn)["next_fetch_at"] == 1000 + 3 * 3600
     bad = _run(conn, "page", 2000, "failed", 2050, "boom")
     s = _status(conn)
-    assert s["error"] == {"run_id": bad, "at": 2050, "error": "boom"}
-    assert s["next_fetch_at"] == 2000 + 3 * 3600 and s["last_run"]["id"] == bad
+    assert s["error"] == {"run_id": bad, "at": 2050, "error": "boom", "status": "failed"}
+    assert s["next_fetch_at"] == 2000 + 3 * 3600 and s["last_run"]["id"] == ok
     _run(conn, "schedule", 3000, "ok", 3100)
     assert _status(conn)["error"] is None
     live = _run(conn, "api", 4000, "running")
@@ -235,6 +236,32 @@ def test_status_next_fetch_and_error(conn):
     assert set(s["running"]) == {"id", "trigger", "started_at", "finished_at", "status", "phase",
                                  "step", "steps", "error"}
     assert views.next_fetch_at(conn, 60, NOW) == 4060
+
+
+def test_partial_runs_neither_postpone_nor_count_as_fetched(conn):   # final review I1
+    sched = _run(conn, "schedule", 1000, "ok", 1100)
+    _run(conn, "api", 2000, "ok", 2010, full=0)                 # POST /api/patches, `ptl add`
+    _run(conn, "cli", 3000, "failed", 3010, "boom", full=0)     # `ptl fetch NAME`
+    _run(conn, "cli", 3500, "running", full=0)
+    s = _status(conn)
+    assert s["next_fetch_at"] == 1000 + 3 * 3600
+    assert s["last_run"]["id"] == sched and s["error"] is None
+    assert s["running"]["started_at"] == 3500                    # its progress still shows
+
+
+def test_status_error_includes_an_interrupted_run_with_a_reason(conn):  # final review I2
+    ok = _run(conn, "schedule", 1000, "ok", 1100)
+    killed = _run(conn, "schedule", 2000, "interrupted", 2050, "killed after 4 hours")
+    s = _status(conn)
+    assert s["error"] == {"run_id": killed, "at": 2050, "error": "killed after 4 hours",
+                          "status": "interrupted"}
+    assert s["last_run"]["id"] == ok                             # "fetched": the last good one
+    _run(conn, "cli", 3000, "interrupted", 3010)                 # ^C: no reason, no error
+    assert _status(conn)["error"]["run_id"] == killed
+    gone = _run(conn, "schedule", 4000, "interrupted", 4010, "fetch process exited with status 1")
+    assert _status(conn)["error"]["run_id"] == gone
+    _run(conn, "schedule", 5000, "ok", 5100)
+    assert _status(conn)["error"] is None
 
 
 def test_run_log(conn):

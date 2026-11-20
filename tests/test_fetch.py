@@ -833,3 +833,68 @@ def test_a_stored_url_msgid_is_never_given_to_b4(conn, cfgp):
     rid = run_fetch(*cfgp, "cli", trails={}, search=nosearch, patch_names=["evil"],
                     discover_new=False)                            # the real LoreSource
     assert any("not a Message-ID" in l for l in log_lines(conn, rid))
+
+
+# --- plan 2 final review I1: only a full run sets the schedule -----------------
+
+def test_only_a_full_run_is_marked_full(conn, cfgp):
+    kernel_patch(conn)
+    src = FakeSource({"a@x": [make_mail("a@x")]})
+    ids = [run_fetch(*cfgp, "schedule", source=src, trails={}, search=nosearch),
+           run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, patch_names=["p"]),
+           run_fetch(*cfgp, "api", source=src, trails={}, search=nosearch, patch_names=["p"],
+                     discover_new=False, lore_only=True),
+           run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, lore_only=True),
+           run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)]
+    assert [conn.execute("SELECT full FROM runs WHERE id=?", (i,)).fetchone()[0]
+            for i in ids] == [1, 0, 0, 0, 0]
+
+
+# --- plan 2 final review I3: a skip made while the run fetched the repos ---------
+
+class SkipDuringRepos(FakeTrail):
+    def __init__(self, db_path, pid, series, result):
+        super().__init__(result)
+        self.db_path, self.pid, self.series = db_path, pid, series
+
+    def prepare(self, patches, progress):
+        from patchtrail import db as _db
+        other = _db.connect(self.db_path)              # the page's "won't backport" click
+        other.execute("INSERT INTO branch_skips (patch_id, series) VALUES (?,?)",
+                      (self.pid, self.series))
+        other.commit()
+        other.close()
+
+
+def test_skip_made_during_the_repos_phase_survives_the_fetch(conn, cfgp):
+    pid = kernel_patch(conn)
+    conflict = {"state": "conflict", "tag": None, "detail": ["CONFLICT in io.c"], "prereqs": []}
+    fragment = {"commits": [commit("c" * 40)], "branches": {"6.1": {"c" * 12: conflict}},
+                "failed": {}, "hint": None}
+    trail = SkipDuringRepos(cfgp[0].db, pid, "6.1", TrailResult(fragment=fragment))
+    run_fetch(*cfgp, "schedule", source=FakeSource({"a@x": [make_mail("a@x")]}),
+              trails={"kernel": trail}, search=nosearch)
+    entry = snapshot.latest(conn, pid)[2]["branches"]["6.1"]["c" * 12]
+    assert entry["state"] == "skipped" and entry["was"]["state"] == "conflict"
+
+
+def test_unskip_made_during_the_repos_phase_survives_the_fetch(conn, cfgp):
+    pid = kernel_patch(conn)
+    conn.execute("INSERT INTO branch_skips (patch_id, series) VALUES (?, '6.1')", (pid,))
+    conn.commit()
+    skipped = {"state": "skipped", "tag": None, "detail": [], "prereqs": []}
+    fragment = {"commits": [commit("c" * 40)], "branches": {"6.1": {"c" * 12: skipped}},
+                "failed": {}, "hint": None}
+
+    class UnskipDuringRepos(FakeTrail):
+        def prepare(self, patches, progress):
+            from patchtrail import db as _db
+            other = _db.connect(cfgp[0].db)
+            other.execute("DELETE FROM branch_skips WHERE patch_id=?", (pid,))
+            other.commit()
+            other.close()
+
+    run_fetch(*cfgp, "schedule", source=FakeSource({"a@x": [make_mail("a@x")]}),
+              trails={"kernel": UnskipDuringRepos(TrailResult(fragment=fragment))},
+              search=nosearch)
+    assert snapshot.latest(conn, pid)[2]["branches"]["6.1"]["c" * 12]["state"] == "not_fetched"

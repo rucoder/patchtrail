@@ -269,9 +269,35 @@ def test_migration_to_v2_is_atomic(tmp_path, monkeypatch):
     raw.close()
 
 
-def test_schema_v2_has_the_index(conn):
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 2
+def test_schema_v3_has_the_indexes(conn):
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == db.SCHEMA_VERSION == 3
     assert conn.execute("SELECT 1 FROM sqlite_master WHERE name='mails_in_reply_to'").fetchone()
+    assert conn.execute("SELECT 1 FROM sqlite_master WHERE name='run_log_run'").fetchone()
+
+
+def test_plan1_database_migrates_to_v3(tmp_path, monkeypatch):     # plan 2 final review I1
+    from importlib import resources
+    plan1 = tmp_path / "plan1-schema"
+    plan1.mkdir()
+    for name in ("001_init.sql", "002_links.sql"):
+        (plan1 / name).write_text(resources.files("patchtrail").joinpath("schema", name)
+                                  .read_text(encoding="utf-8"))
+    path = tmp_path / "plan1.db"
+    monkeypatch.setattr(db, "MIGRATIONS", plan1)
+    old = db.connect(path)
+    assert old.execute("PRAGMA user_version").fetchone()[0] == 2
+    rid = old.execute("INSERT INTO runs (pid, trigger, started_at, finished_at, status)"
+                      " VALUES (1, 'cli', 10, 20, 'ok')").lastrowid
+    old.execute("INSERT INTO run_log (run_id, at, line) VALUES (?, 11, 'phase: discover')", (rid,))
+    old.commit()
+    old.close()
+    monkeypatch.setattr(db, "MIGRATIONS", None)
+    new = db.connect(path)
+    assert new.execute("PRAGMA user_version").fetchone()[0] == 3
+    assert tuple(new.execute("SELECT id, status, full FROM runs").fetchone()) == (rid, "ok", 1)
+    assert new.execute("SELECT line FROM run_log").fetchone()[0] == "phase: discover"
+    assert new.execute("SELECT 1 FROM sqlite_master WHERE name='run_log_run'").fetchone()
+    new.close()
 
 
 # --- fetch, poll, watch, check, backport, import ----------------------------------

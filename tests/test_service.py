@@ -16,9 +16,9 @@ def _conn():
     return db.connect(paths().db)
 
 
-def _add_run(conn, *, started_at, status="running", pid=None, trigger="cli"):
-    cur = conn.execute("INSERT INTO runs(pid, trigger, started_at, status) VALUES (?,?,?,?)",
-                       (pid, trigger, started_at, status))
+def _add_run(conn, *, started_at, status="running", pid=None, trigger="cli", full=1):
+    cur = conn.execute("INSERT INTO runs(pid, trigger, started_at, status, full)"
+                       " VALUES (?,?,?,?,?)", (pid, trigger, started_at, status, full))
     conn.commit()
     return cur.lastrowid
 
@@ -184,6 +184,19 @@ def test_scheduler_waits_interval_after_cli_run():
     s.tick()
     assert spawn.calls == []
     now[0] = 1050
+    s.tick()
+    assert len(spawn.calls) == 1
+
+
+def test_partial_runs_do_not_postpone_the_schedule():          # final review I1
+    now = [1000]
+    spawn = Spawner()
+    r, s = _sched(now, spawn)
+    _add_run(_conn(), started_at=1000, status="ok", trigger="schedule")
+    for t in (1040, 1080):            # an agent registering patches: lore-only api runs
+        _add_run(_conn(), started_at=t, status="ok", trigger="api", full=0)
+    assert s.next_at(_conn()) == 1100
+    now[0] = 1100
     s.tick()
     assert len(spawn.calls) == 1
 
