@@ -237,6 +237,7 @@ the order bad > warn > ok > na. A series with a FAILED mail is `bad`.
 | `applies_after_queue`, `backport_sent` | warn |
 | `conflict` | bad |
 | `not_affected`, `skipped`, `not_fetched` | na |
+| `failed` (pill only: a series with a FAILED mail and no worse branch state) | bad |
 
 **Steps:** one per stage the project declares.
 - `done` if the patch has reached the stage.
@@ -248,7 +249,11 @@ the order bad > warn > ok > na. A series with a FAILED mail is `bad`.
   - null for todo and skipped.
 - `note`:
   - `accepted`: `tree_branch` when one is known.
-  - `applied`: the newest commit's `where` text, `"mainline: not yet"` when no commit is applied.
+  - `applied`: human text, never a raw `where` value or URL.
+    - Kernel: the first line of `render._mainline` for the newest commit, without the stable hint:
+      `mainline: v6.19-rc1`, `mainline: only in linux-next`, `mainline: only in <branch>`.
+    - Other projects: `applied upstream` once the newest commit is applied or released.
+    - `mainline: not yet` when there is no such commit.
   - `released`: the newest commit's release.
   - `backports`: `"N of M branches settled"`, counting released, not affected and skipped.
   - Otherwise null.
