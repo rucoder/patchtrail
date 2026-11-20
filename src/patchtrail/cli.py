@@ -528,6 +528,10 @@ def cmd_import(args, conn, cfg, mine) -> int:
     return 0
 
 
+def cmd_serve(args, conn, cfg, mine) -> int:
+    raise AssertionError("serve runs before the database is opened")
+
+
 def cmd_setup(args, conn, cfg, mine) -> int:
     raise AssertionError("setup runs before the database is opened")
 
@@ -614,6 +618,8 @@ def build_parser() -> argparse.ArgumentParser:
     p = add("mark-applied", cmd_mark_applied, "the patch is applied; optionally as COMMIT")
     p.add_argument("name", metavar="NAME")
     p.add_argument("commit", nargs="?", metavar="COMMIT")
+    p = add("serve", cmd_serve, "run the web page, the API and the 3-hour fetch")
+    p.add_argument("--listen", metavar="HOST:PORT", help="default: listen in the config")
     p = add("fetch", cmd_fetch, "fetch lore and the git trees now")
     p.add_argument("names", nargs="*", metavar="NAME")
     # Used by the service, which runs its fetches as child processes.
@@ -655,6 +661,14 @@ def main(argv: list[str] | None = None) -> int:
 
         return run_setup(seed=args.seed, no_seed=args.no_seed, do_import=args.do_import)
     cfg = load_config(paths())
+    if args.cmd == "serve":
+        from patchtrail.server import serve
+
+        try:
+            return serve(paths(), cfg, args.listen)
+        except ValueError as e:
+            print(f"ptl: {e}", file=sys.stderr)
+            return 1
     conn = db.connect(paths().db)
     try:
         return args.func(args, conn, cfg, my_addresses(cfg))
