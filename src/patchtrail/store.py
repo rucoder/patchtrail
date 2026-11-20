@@ -325,3 +325,23 @@ def mail_infos(conn, patch_id):
     from patchtrail.mail import parse_mail
 
     return [parse_mail(bytes(r["raw"])) for r in patch_mails(conn, patch_id)]
+
+
+def display_subject(conn, patch_id) -> str:
+    """The subject that names a patch: the newest mail in the newest series revision's
+    thread that its author sent and that is neither a reply nor a patch N/M of the
+    series; failing that the revision's own subject, then the first commit's, then ""."""
+    from patchtrail.mail import _PATCH_N_OF_M
+
+    newest = newest_series(revisions(conn, patch_id))
+    if newest:
+        author = newest["author"]
+        for m in reversed(thread_mails(conn, newest["root_msgid"])):
+            subject = m["subject"] or ""
+            if (author and m["from_addr"] == author and not subject.lower().startswith("re:")
+                    and not _PATCH_N_OF_M.search(subject)):
+                return subject
+        if newest["subject"]:
+            return newest["subject"]
+    cs = commits(conn, patch_id)
+    return (cs[0]["subject"] or "") if cs else ""

@@ -579,3 +579,17 @@ def test_fetch_lore_only_option(populated, monkeypatch):
     assert main(["fetch", "--lore-only"]) == 0
     assert seen["k"]["lore_only"] is True and seen["k"]["discover_new"] is False
     assert seen["a"][2] == "cli"
+
+
+def test_skip_shows_at_once(populated_kernel, capsys):
+    main(["ls", "iowq-cpuset"])
+    before = capsys.readouterr().out
+    assert "    6.1.y   CONFLICT in io_uring/io-wq.c" in before
+    assert main(["skip", "iowq-cpuset", "6.1"]) == 0
+    main(["ls", "iowq-cpuset"])
+    out = capsys.readouterr().out
+    assert "    6.1.y   won't backport" in out and "CONFLICT" not in out
+    assert main(["unskip", "iowq-cpuset", "6.1"]) == 0
+    main(["ls", "iowq-cpuset"])
+    out = capsys.readouterr().out
+    assert "    6.1.y   CONFLICT in io_uring/io-wq.c" in out and "won't backport" not in out

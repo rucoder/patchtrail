@@ -83,7 +83,7 @@ def summary_lines(conn, patch, *, mine: frozenset[str] = frozenset(), width: int
     # The newest series revision names the patch, never a backport posted later.
     newest = store.newest_series(store.revisions(conn, patch["id"]))
     commits = store.commits(conn, patch["id"])
-    subject = ((newest["subject"] if newest else "") or (commits[0]["subject"] if commits else "")
+    subject = (store.display_subject(conn, patch["id"])
                or head_subject(store.mail_infos(conn, patch["id"])))
     n = len(state["mails"])
     new = len(_new_msgids(conn, patch, state))
@@ -261,11 +261,7 @@ def _branch_text(e: dict) -> list[str]:
 def _mainline(c: dict) -> list[str]:
     where = c["where"]
     if where == "mainline":
-        out = [f"    mainline: {c.get('release') or 'yes, after the last tag'}"]
-        if c.get("cc") is None and not c["fixes"]:
-            out.append("    not tagged for stable: ask stable@vger.kernel.org "
-                       "for the branches below")
-        return out
+        return [f"    mainline: {c.get('release') or 'yes, after the last tag'}"]
     if where == "next":
         return ["    mainline: only in linux-next; stable takes nothing before it "
                 "reaches mainline"]
@@ -278,6 +274,7 @@ def _mainline(c: dict) -> list[str]:
 def kernel_lines(state: dict, *, verbose: bool = False) -> list[str]:
     out: list[str] = []
     commits = state["commits"]
+    shown = False
     for c in commits:
         if len(commits) > 1:
             out.append(f"    {c['sha'][:12]} {c['subject']}")
@@ -294,6 +291,7 @@ def kernel_lines(state: dict, *, verbose: bool = False) -> list[str]:
             e = state["branches"][series].get(c["sha"][:12])
             if e is None:
                 continue
+            shown = True
             text = _branch_text(e)
             out.append(f"    {series + '.y':<8}{text[0]}")
             rest = [f"{'':<8}{t}" for t in text[1:]]
@@ -307,9 +305,11 @@ def kernel_lines(state: dict, *, verbose: bool = False) -> list[str]:
                                 f"{'':<8}  ... {len(prereqs) - len(shown)} more (-v)")
             out += ["    " + t for t in rest]
     if state.get("hint"):
-        out.append(f"    {state['hint']}")
+        out.append(f"    {state['hint']}" + ("" if shown else " to take it"))
     failed = state.get("failed") or {}
     if commits and failed:
         out.append("    FAILED mails from stable (send a backport in reply):")
         out += [f"      {s}: {d['date']} {d['url']}" for s, d in sorted(failed.items())]
+    elif any(c.get("stable") for c in commits):
+        out.append("    FAILED mails from stable: none")
     return out

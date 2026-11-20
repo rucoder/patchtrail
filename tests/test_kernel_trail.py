@@ -209,3 +209,13 @@ def test_found_upstream_by_subject_needs_no_tree(trail, view, kfix):  # final re
     trail.prepare([v, waiting], NullProgress())                 # only in its tree: fetched
     assert trail.repo.run("for-each-ref", "--format=%(refname)",
                           "refs/patchtrail/trees/").split() != []
+
+
+def test_rebased_commit_found_on_first_run(trail, view, kfix):
+    gone = "de" * 20                                  # the "Applied" mail names a rebased-away hash
+    v = view(subject="[PATCH] fix io", mails=[root("fix io"),
+             ty("[1/1] fix io\n      commit: " + gone + "\n")])
+    trail.prepare([v], NullProgress()); res = trail.evaluate(v, NullProgress())
+    assert res.commits_found == [(kfix.sha["F"], "fix io", "search")]
+    assert res.replaced == {}
+    assert [(c["sha"], c["where"]) for c in res.fragment["commits"]] == [(kfix.sha["F"], "mainline")]

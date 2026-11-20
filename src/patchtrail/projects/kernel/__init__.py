@@ -114,12 +114,15 @@ class KernelTrail(Trail):
         commits, stable = [], []
         for sha, subject, source, stored in known:
             c, full, tree = self._commit(sha, subject, patch, trees)
-            if stored and source != "manual" and c["where"] == "missing":
+            if source != "manual" and c["where"] == "missing":
                 # A rebase gives the commit a new hash; a commit that stays
                 # missing was dropped from its tree.
                 new = search_commit(self.repo, c["subject"], patch.author, patch.posted_at, refs)
                 if new and new != full:
-                    result.replaced[full or sha] = new
+                    if stored:
+                        result.replaced[full or sha] = new
+                    else:
+                        source = "search"       # named by this run's mail: nothing stored to replace
                     c, full, tree = self._commit(new, "", patch, trees)
             if any(c["sha"] == seen["sha"] for seen in commits):
                 continue                        # one commit named twice (short and full hash)
@@ -180,6 +183,12 @@ class KernelTrail(Trail):
         for series in self.series:
             if series in patch.skips:
                 entry = {"state": "skipped", "tag": None, "detail": [], "prereqs": []}
+                was = ((patch.prev_state or {}).get("branches", {}).get(series, {})
+                       .get(full[:12]))
+                if was is not None and was["state"] != "skipped":
+                    entry["was"] = was
+                elif was is not None and "was" in was:
+                    entry["was"] = was["was"]
             elif series in patch.backports and self._lacks(full, files, series):
                 entry = {"state": "backport_sent", "tag": None, "detail": [], "prereqs": []}
             else:

@@ -162,6 +162,23 @@ def _previous(view: PatchView) -> dict:
             "failed": prev.get("failed", {}), "hint": prev.get("hint")}
 
 
+def _apply_skips(fragment: dict, skips: frozenset[str]) -> dict:
+    """The fragment with the patch's skips in force, so a skip or unskip shows without
+    a fetch. A skipped entry keeps the entry it replaced as `was` (detail only)."""
+    branches = {}
+    for series, entries in fragment["branches"].items():
+        out = {}
+        for key, e in entries.items():
+            if series in skips and e["state"] != "skipped":
+                e = {"state": "skipped", "tag": None, "detail": [], "prereqs": [], "was": e}
+            elif series not in skips and e["state"] == "skipped":
+                e = e.get("was") or {"state": "not_fetched", "tag": None,
+                                     "detail": ["checked on the next fetch"], "prereqs": []}
+            out[key] = e
+        branches[series] = out
+    return {**fragment, "branches": branches}
+
+
 def _why(e: BaseException) -> str:
     return str(e) if isinstance(e, LoreError) else f"{type(e).__name__}: {e}"
 
@@ -424,7 +441,8 @@ def reevaluate(conn, paths: Paths, cfg: Config, patch_id: int) -> int | None:
     view, _ = _load(conn, row)
     if view.prev_state is None and row["read_on_first_snapshot"]:
         return None
-    state = compose_for(conn, row, my_addresses(cfg), _previous(view))
+    fragment = _apply_skips(_previous(view), store.skips(conn, patch_id))
+    state = compose_for(conn, row, my_addresses(cfg), fragment)
     snap = record(conn, patch_id, state, int(time.time()))
     store.commit(conn)
     return snap

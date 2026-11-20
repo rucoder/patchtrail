@@ -243,3 +243,26 @@ def test_summary_names_the_series_not_a_later_backport(conn):     # final review
                              kind="backport", branch="6.6")
     store.upsert_mails(conn, bp2, [make_mail("bp2@x", subject="[PATCH 6.6.y] io: upstream subject")], 1)
     assert render.summary_lines(conn, store.patch_by_id(conn, follow))[0] == "f  io: upstream subject"
+
+
+def test_ls_hint_once_without_branches(conn, capsys):
+    from patchtrail import snapshot
+    from conftest import _state
+    pid = store.add_patch(conn, "u", project="kernel", now=epoch("2026-11-12"))
+    rev = store.add_revision(conn, pid, "u@x", subject="[PATCH] u", author="me@example.org")
+    store.upsert_mails(conn, rev, [make_mail("u@x", subject="[PATCH] u")], 1)
+    st = _state("applied", ["u@x"], "applied")
+    st["commits"] = [{"sha": "a" * 40, "subject": "u", "where": "mainline", "stage": "applied",
+                      "release": None, "stable": False, "cc": None, "fixes": []}]
+    st["hint"] = "not tagged for stable: ask stable@vger.kernel.org"
+    snapshot.record(conn, pid, st, epoch("2026-11-12"))
+    conn.commit()
+    assert main(["ls", "u"]) == 0
+    out = capsys.readouterr().out
+    assert out.count("not tagged for stable") == 1
+    assert "not tagged for stable: ask stable@vger.kernel.org to take it" in out
+
+
+def test_ls_failed_none_line(populated_kernel, capsys):
+    main(["ls", "iowq-cpuset"])
+    assert "    FAILED mails from stable: none" in capsys.readouterr().out

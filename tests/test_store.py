@@ -159,3 +159,42 @@ def test_atomic_commits_at_the_end_and_rolls_back_on_error(tmp_path):
         assert store.get_patch(b, "y") is None and store.get_patch(b, "z") is None
     assert store.get_patch(b, "y") and store.get_patch(b, "z")
     a.close(); b.close()
+
+
+def _series_patch(conn, subject="[PATCH] fix io", author="me@example.org"):
+    pid = store.add_patch(conn, "p", now=1)
+    rev = store.add_revision(conn, pid, "v1@x", subject=subject, author=author, posted_at=1)
+    return pid, rev
+
+
+def test_display_subject_v2_in_v1_thread(conn):
+    pid, rev = _series_patch(conn)
+    store.upsert_mails(conn, rev, [
+        make_mail("v1@x", subject="[PATCH] fix io", date="Wed, 11 Nov 2026 10:00:00 +0000"),
+        make_mail("rv@x", frm="Rev <rev@x.org>", in_reply_to="v1@x", subject="Re: [PATCH] fix io",
+                  date="Wed, 11 Nov 2026 11:00:00 +0000"),
+        make_mail("v2@x", in_reply_to="v1@x", subject="[PATCH v2] fix io properly",
+                  date="Thu, 12 Nov 2026 10:00:00 +0000"),
+        make_mail("me-re@x", in_reply_to="rv@x", subject="Re: [PATCH] fix io",
+                  date="Fri, 13 Nov 2026 10:00:00 +0000")], 1)
+    assert store.display_subject(conn, pid) == "[PATCH v2] fix io properly"
+
+
+def test_display_subject_ignores_backport_posting(conn):
+    pid, rev = _series_patch(conn)
+    store.upsert_mails(conn, rev, [make_mail("v1@x", subject="[PATCH] fix io")], 1)
+    bp = store.add_revision(conn, pid, "bp@x", subject="[PATCH 6.1.y] fix io", author="me@example.org",
+                            posted_at=2, kind="backport", branch="6.1")
+    store.upsert_mails(conn, bp, [make_mail("bp@x", in_reply_to="v1@x", subject="[PATCH 6.1.y] fix io",
+                                            date="Thu, 12 Nov 2026 10:00:00 +0000")], 1)
+    assert store.display_subject(conn, pid) == "[PATCH] fix io"
+
+
+def test_display_subject_ignores_patch_n_of_m(conn):
+    pid, rev = _series_patch(conn, subject="[PATCH 0/2] cover")
+    store.upsert_mails(conn, rev, [
+        make_mail("v1@x", subject="[PATCH 0/2] cover", date="Wed, 11 Nov 2026 10:00:00 +0000"),
+        make_mail("p1@x", in_reply_to="v1@x", subject="[PATCH 1/2] first",
+                  date="Wed, 11 Nov 2026 10:01:00 +0000")], 1)
+    assert store.display_subject(conn, pid) == "[PATCH 0/2] cover"      # falls back to the revision
+    assert store.display_subject(conn, store.add_patch(conn, "empty", now=1)) == ""
