@@ -29,6 +29,7 @@ def _row(conn, run_id):
 
 class FakeChild:
     pid = 4242
+    returncode = 0
 
     def __init__(self, alive=True):
         self.alive = alive
@@ -223,3 +224,84 @@ def test_run_forever_stops():
     t.join(5)
     assert not t.is_alive()
     assert len(spawn.calls) == 1
+
+
+def test_failed_spawn_waits_interval():
+    now = [1000]
+    spawn = Spawner(alive=False)       # the child dies before it writes a run row
+    r, s = _sched(now, spawn)
+    s.tick()
+    assert len(spawn.calls) == 1
+    now[0] = 1015
+    s.tick()
+    assert len(spawn.calls) == 1
+    now[0] = 1100
+    s.tick()
+    assert len(spawn.calls) == 2
+
+
+def _group_child(code):
+    return lambda argv, **kw: subprocess.Popen([sys.executable, "-c", code], **kw)
+
+
+def _cleanup(r):
+    if r._child is not None:
+        try:
+            os.killpg(r._child.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        r._child.wait()
+
+
+_ROW = ("import os, signal, sys, time\n"
+        "from patchtrail import db\nfrom patchtrail.config import paths\n"
+        "c = db.connect(paths().db)\n"
+        "c.execute(\"INSERT INTO runs(pid, trigger, started_at, status) VALUES (?, 'page', 1, 'running')\","
+        " (os.getpid(),))\nc.commit()\n")
+
+
+def _wait_row(r):
+    conn = _conn()
+    deadline = time.time() + 15
+    while not r.child_pid or r.starting(conn):
+        assert time.time() < deadline
+        time.sleep(0.05)
+
+
+def test_timeout_sigkill_when_child_ignores_sigterm():
+    code = _ROW + "signal.signal(signal.SIGTERM, signal.SIG_IGN)\nprint('x')\ntime.sleep(600)\n"
+    clock = [1000]
+    r = service.Runner(paths(), timeout_s=1, grace_s=0.5, now=lambda: clock[0],
+                       spawn=_group_child(code))
+    try:
+        r.start("page")
+        pid = r.child_pid
+        _wait_row(r)
+        time.sleep(0.3)                # let the handler be installed
+        clock[0] += 2
+        r.poll()
+        assert r.child_pid is None
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        row = _conn().execute("SELECT * FROM runs").fetchone()
+        assert row["status"] == "interrupted" and "killed after" in row["error"]
+    finally:
+        _cleanup(r)
+
+
+def test_terminate_stops_child_and_marks_interrupted():
+    code = _ROW + "time.sleep(600)\n"
+    r = service.Runner(paths(), timeout_s=3600, grace_s=0.5, spawn=_group_child(code))
+    try:
+        r.start("page")
+        pid = r.child_pid
+        _wait_row(r)
+        r.terminate()
+        assert r.child_pid is None
+        with pytest.raises(ProcessLookupError):
+            os.kill(pid, 0)
+        row = _conn().execute("SELECT * FROM runs").fetchone()
+        assert row["status"] == "interrupted" and row["error"] == "stopped with the service"
+        r.terminate()                  # no child: a no-op
+    finally:
+        _cleanup(r)

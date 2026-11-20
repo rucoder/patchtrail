@@ -82,19 +82,33 @@ class Runner:
             elif not self._alive():
                 self._after_exit()
             elif self._now() - self._started > self._timeout_s:
-                self._kill()
+                h = self._timeout_s / 3600
+                self._kill(self._grace_s, f"killed after {h:g} {'hour' if h == 1 else 'hours'}")
 
-    def _kill(self) -> None:
-        child, hours = self._child, self._timeout_s / 3600
+    def _kill(self, grace_s: float, error: str) -> None:
+        """Kill the child's process group: SIGTERM, SIGKILL after grace_s. Every wait is
+        bounded; a child that survives SIGKILL is kept for a later poll() to reap."""
+        child = self._child
         self._signal(child.pid, signal.SIGTERM)
         try:
-            child.wait(self._grace_s)
+            child.wait(grace_s)
         except subprocess.TimeoutExpired:
             pass
-        self._signal(child.pid, signal.SIGKILL)    # stragglers in the group; child not yet reaped
-        child.wait()
+        # Also reaches stragglers in the group. If the child was already reaped by the
+        # wait above, an unrelated group reusing the pgid is not a realistic concern.
+        self._signal(child.pid, signal.SIGKILL)
+        try:
+            child.wait(5)
+        except subprocess.TimeoutExpired:
+            return                             # uninterruptible; poll() retries
         self._child = None
-        self._reap(f"killed after {hours:g} hours")
+        self._reap(error)
+
+    def terminate(self) -> None:
+        """Stop a running fetch because the service is shutting down."""
+        with self._lock:
+            if self._alive():
+                self._kill(min(self._grace_s, 5), "stopped with the service")
 
     @staticmethod
     def _signal(pgid: int, sig: int) -> None:
@@ -107,6 +121,7 @@ class Runner:
 class Scheduler:
     def __init__(self, runner: Runner, paths: Paths, *, interval_s: float, now=time.time):
         self._runner, self._paths, self._interval_s, self._now = runner, paths, interval_s, now
+        self._last_spawn: float | None = None
 
     def next_at(self, conn) -> int:
         return views.next_fetch_at(conn, self._interval_s, int(self._now()))
@@ -115,12 +130,15 @@ class Scheduler:
         self._runner.poll()
         conn = db.connect(self._paths.db)
         try:
-            due = self._now() >= self.next_at(conn)
+            due_at = self.next_at(conn)
         finally:
             conn.close()
-        if due and self._runner.child_pid is None:
+        if self._last_spawn is not None:       # a child may die before it writes a run row
+            due_at = max(due_at, self._last_spawn + self._interval_s)
+        if self._now() >= due_at and self._runner.child_pid is None:
             try:
                 self._runner.start("schedule")
+                self._last_spawn = self._now()
             except fetch.Busy:
                 pass                           # a CLI or cron fetch counts as the run
 
