@@ -564,3 +564,18 @@ def test_check_verbose_shows_every_prerequisite(populated, monkeypatch, capsys):
     assert main(["check", "-v", sha]) == 0
     out = capsys.readouterr().out
     assert "io: change 9" in out and "more (-v)" not in out
+
+
+def test_fetch_trigger_option_recorded(conn, monkeypatch):
+    monkeypatch.setattr("patchtrail.sources.lore.search", lambda *a, **k: [])
+    assert main(["fetch", "--trigger", "schedule"]) == 0
+    assert conn.execute("SELECT trigger FROM runs ORDER BY id DESC LIMIT 1").fetchone()[0] \
+        == "schedule"
+
+
+def test_fetch_lore_only_option(populated, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: seen.update(a=a, k=k) or 1)
+    assert main(["fetch", "--lore-only"]) == 0
+    assert seen["k"]["lore_only"] is True and seen["k"]["discover_new"] is False
+    assert seen["a"][2] == "cli"

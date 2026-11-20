@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
+import subprocess
 import urllib.error
 from pathlib import Path
 
 import pytest
+from conftest import raising
 
 from patchtrail.sources.lore import LORE, LoreError, LoreSource, fetch_thread, parse_msgid, search
 
@@ -204,3 +206,19 @@ def test_fetch_thread_never_passes_an_option_to_b4(tmp_path, monkeypatch):   # f
         with pytest.raises(LoreError, match="not a Message-ID"):
             fetch_thread(bad)
     assert not (tmp_path / "ran").exists()
+
+
+def test_b4_timeout_is_lore_error(monkeypatch):
+    def run(*a, **k):
+        assert k["timeout"] == 600
+        raise subprocess.TimeoutExpired("b4", 600)
+
+    monkeypatch.setattr("patchtrail.sources.lore.subprocess.run", run)
+    with pytest.raises(LoreError, match="timed out"):
+        fetch_thread("a@b")
+
+
+def test_b4_missing_is_lore_error(monkeypatch):
+    monkeypatch.setattr("patchtrail.sources.lore.subprocess.run", raising(FileNotFoundError("b4")))
+    with pytest.raises(LoreError, match="b4"):
+        fetch_thread("a@b")

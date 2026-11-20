@@ -212,16 +212,17 @@ def cmd_unread(args, conn, cfg, mine) -> int:
     return 0
 
 
-def _fetch(cfg, names: list[str] | None, **kw) -> int:
+def _fetch(cfg, names: list[str] | None, trigger: str = "cli", **kw) -> int:
     try:
-        return run_fetch(paths(), cfg, "cli", patch_names=names, **kw)
+        return run_fetch(paths(), cfg, trigger, patch_names=names, **kw)
     except Busy as e:
         raise _busy(e) from e
 
 
 def cmd_fetch(args, conn, cfg, mine) -> int:
     _patches(conn, args.names)
-    _fetch(cfg, args.names or None, echo=print)
+    kw = {"lore_only": True, "discover_new": False} if args.lore_only else {}
+    _fetch(cfg, args.names or None, echo=print, trigger=args.trigger, **kw)
     return 0
 
 
@@ -660,6 +661,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("commit", nargs="?", metavar="COMMIT")
     p = add("fetch", cmd_fetch, "fetch lore and the git trees now")
     p.add_argument("names", nargs="*", metavar="NAME")
+    # Used by the service, which runs its fetches as child processes.
+    p.add_argument("--trigger", choices=["cli", "schedule", "page", "api"], default="cli",
+                   help=argparse.SUPPRESS)
+    p.add_argument("--lore-only", action="store_true", help=argparse.SUPPRESS)
     p = add("poll", cmd_poll, "fetch, then print what changed")
     p.add_argument("names", nargs="*", metavar="NAME")
     p = add("watch", cmd_watch, "print new changes every 30 s; does not fetch")

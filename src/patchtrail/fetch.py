@@ -402,6 +402,19 @@ def locked(paths: Paths, conn):
         os.close(fd)                # releases the lock
 
 
+def reap_stale(paths: Paths, conn, now: int, error: str | None = None) -> int:
+    """Mark every run still 'running' as interrupted when no fetch holds the lock
+    (so none of them is alive). Returns how many rows changed; 0 when a fetch runs."""
+    try:
+        with locked(paths, conn):
+            cur = conn.execute("UPDATE runs SET status='interrupted', finished_at=?,"
+                               " error=COALESCE(?, error) WHERE status='running'", (now, error))
+            conn.commit()
+            return cur.rowcount
+    except Busy:
+        return 0
+
+
 def reevaluate(conn, paths: Paths, cfg: Config, patch_id: int) -> int | None:
     """Record the patch's state again from its stored mails, the changes made by hand
     and the trail fragment of its last snapshot. No network. Returns the new snapshot's
@@ -452,8 +465,9 @@ def run_fetch(paths: Paths, cfg: Config, trigger: str, *, source=None, trails=No
                 raise
             except Exception as e:
                 conn.rollback()
-                progress.log(f"failed: {_why(e)}")
+                # Finish first: a failing log write must not leave the run running.
                 _finish(conn, run_id, "failed", int(now()), _why(e))
+                progress.log(f"failed: {_why(e)}")
                 raise
             _finish(conn, run_id, "ok", int(now()))
             return run_id

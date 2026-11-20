@@ -805,3 +805,21 @@ def test_project_from_the_newest_revision_once_versions_are_known(conn, cfgp):
     run_fetch(*cfgp, "cli", source=src, trails={}, search=nosearch, discover_new=False)
     assert [r["root_msgid"] for r in store.revisions(conn, pid)] == ["v2@x", "v3@x"]
     assert store.patch_by_id(conn, pid)["project"] == "qemu"
+
+
+def test_failed_run_finished_even_if_log_fails(conn, cfgp, monkeypatch):
+    import sqlite3
+
+    monkeypatch.setattr("patchtrail.fetch.merge_by_change_id", raising(RuntimeError("boom")))
+    log = DbProgress.log
+
+    def flaky(self, line):
+        if line.startswith("failed:"):
+            raise sqlite3.OperationalError("database is locked")
+        log(self, line)
+
+    monkeypatch.setattr(DbProgress, "log", flaky)
+    with pytest.raises(sqlite3.OperationalError):
+        run_fetch(*cfgp, "cli", source=FakeSource(), trails={}, search=nosearch, now=lambda: 3)
+    r = last_run(conn)
+    assert (r["status"], r["finished_at"]) == ("failed", 3) and "boom" in r["error"]

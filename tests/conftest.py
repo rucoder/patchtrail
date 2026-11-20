@@ -18,7 +18,8 @@ def hermetic(tmp_path, monkeypatch):
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
     monkeypatch.delenv("PATCHTRAIL_FROM", raising=False)
     b4 = tmp_path / "no-b4"
-    b4.write_text("#!/bin/sh\necho 'b4 called in tests' >&2\nexit 99\n")
+    called = tmp_path / "b4-called"
+    b4.write_text(f"#!/bin/sh\ntouch '{called}'\necho 'b4 called in tests' >&2\nexit 99\n")
     b4.chmod(0o755)
     monkeypatch.setenv("PATCHTRAIL_B4", str(b4))
 
@@ -26,7 +27,9 @@ def hermetic(tmp_path, monkeypatch):
         raise AssertionError("network in tests")
 
     monkeypatch.setattr(urllib.request, "urlopen", no_network)
-    return home
+    yield home
+    if called.exists():
+        pytest.fail("the test ran the real b4; set PATCHTRAIL_B4 to a fake")
 
 
 @pytest.fixture

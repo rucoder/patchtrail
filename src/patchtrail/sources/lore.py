@@ -65,8 +65,13 @@ def b4_path() -> str:
 def fetch_thread(msgid: str) -> bytes:
     if not valid_msgid(msgid):
         raise LoreError(f"not a Message-ID: {msgid!r}")
-    r = subprocess.run([b4_path(), "-q", "mbox", "-C", "-o", "-", "--", msgid],
-                       capture_output=True)
+    try:
+        r = subprocess.run([b4_path(), "-q", "mbox", "-C", "-o", "-", "--", msgid],
+                           capture_output=True, timeout=600)
+    except subprocess.TimeoutExpired as e:
+        raise LoreError("b4 timed out after 600 s") from e
+    except OSError as e:
+        raise LoreError(f"cannot run b4: {e}") from e
     if r.returncode != 0 or not r.stdout.startswith(b"From "):
         err = r.stderr.decode(errors="replace").strip().splitlines()
         raise LoreError(err[-1] if err else "not on lore yet?")
