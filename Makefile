@@ -2,7 +2,13 @@
 test:
 	uv run pytest -q
 
-install:
+web:
+	cd web && npm ci && npm run build
+
+install: web
 	uv tool install --force .
 
-.PHONY: test install
+test-web:
+	cd web && npm ci && npm test
+
+.PHONY: test web install test-web
