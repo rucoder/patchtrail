@@ -53,12 +53,16 @@ The answer is the same object as `ptl add --json` prints:
 | 201 | The patch was created. |
 | 200 | The Message-ID was already registered: new links were added, `note` replaced the note, and the existing patch is reported under its first name. Safe to repeat. |
 | 409 | The name belongs to a different patch. Pick another name. |
-| 400 | Bad input: a malformed name, a Message-ID without `@`, a link that is not `http(s)://`, a body that is not a JSON object, or a field of the wrong type. The answer is `{"error": "..."}`. |
+| 400 | Bad input: a malformed name, a Message-ID without `@` or one that reads as a URL (`://`), a link that is not `http(s)://`, a body that is not a JSON object, or a field of the wrong type. The answer is `{"error": "..."}`. |
 
 Notes:
 - The request must have `Content-Type: application/json`, or the answer is 415.
 - It needs no `Origin` header. curl and scripts send none. A request that does carry one must
   match the `Host` it was sent to, or the answer is 403; only browsers on other sites hit that.
-- The service starts a lore-only fetch for the new patch at once, so lore is read within
-  seconds; where the patch stands in git comes with the next scheduled fetch.
+- Address the server by its IP address, its host name or full domain name, or `localhost`.
+  Another name, such as a DNS alias, gets 403 `unknown Host NAME` until the user adds it to
+  `hosts` in `config.toml`.
+- The service starts a lore-only fetch for the new patch at once, so lore is usually read within
+  seconds. If a fetch is already running, the patch waits for the next run, up to
+  `interval_hours` later. Where the patch stands in git comes with the next scheduled fetch.
 - The service has no login: use it only on a trusted network.

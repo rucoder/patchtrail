@@ -53,8 +53,15 @@ Approved mockup: `docs/mockups/board-with-detail.html`. Open items from Plan 1:
   - pytest stays a dev dependency.
 - **Node:** needed only to build the page (≥ 20). Running `ptl serve` never needs Node.
 - **Config defaults:** `listen = "0.0.0.0:8470"`, `interval_hours = 3`, `fetch_timeout_hours = 4`,
-  `idle_days = 180`.
-- **No login.** Every request that changes state (POST, PUT, DELETE) must pass two checks:
+  `idle_days = 180`, `hosts = []`.
+- **No login.** Every `/api` request, GET included, must name a known `Host` (final review I6,
+  against DNS rebinding):
+  - Allowed, case-insensitive and with any port: an IP literal (IPv4, or bracketed IPv6),
+    `localhost`, `socket.gethostname()`, `socket.getfqdn()`, and each name in the config option
+    `hosts` (`Config.hosts: list[str]`, default empty; `ptl setup` writes it commented out).
+  - Anything else, a missing Host included, answers 403
+    `{"error": "unknown Host <name>; add it to hosts in config.toml"}`. Static files stay open.
+- Every request that changes state (POST, PUT, DELETE) must also pass two checks:
   - **(a)** If it carries an `Origin` header, the Origin must equal `http://` + its `Host` header.
     Otherwise answer 403.
   - **(b)** It must have `Content-Type: application/json`. Otherwise answer 415.
@@ -160,11 +167,15 @@ type Run = { id: number; trigger: "cli"|"schedule"|"page"|"api"; started_at: num
   phase: string|null; step: number|null; steps: number|null; error: string|null };
 
 type Status = { version: string; now: number; interval_hours: number;
-  next_fetch_at: number|null;        // newest run's started_at + interval; now if no run yet
-  running: Run|null;                 // the run in progress, from any process
+  next_fetch_at: number|null;        // newest *full* run's started_at + interval; now if none yet
+  running: Run|null;                 // the run in progress, from any process, full or not
   starting: boolean;                 // the service started a child whose run row isn't written yet
-  last_run: Run|null;                // newest run that has finished
-  error: {run_id: number; at: number; error: string}|null };  // newest failed run, if no ok run after it
+  last_run: Run|null;                // newest full run that finished ok (the bar's "fetched")
+  error: {run_id: number; at: number; error: string; status: "failed"|"interrupted"}|null };
+      // newest full run that failed, or was interrupted with an error (killed, crashed,
+      // stopped with the service), if no ok full run came after it
+  // A full run discovers, takes every patch and follows the trails (runs.full = 1, migration
+  // 003). `ptl add`, POST /api/patches, `ptl fetch NAME` and --lore-only runs are not full.
 
 type Link = { url: string; label: string };          // label from render.link_label
 type Pill = { series: string; state: string; tone: "ok"|"warn"|"bad"|"na" };
@@ -196,7 +207,9 @@ type Detail = Card & {
   since: { at: number|null; changes: ChangeT[] };    // at null: never read
   commits: {sha: string; subject: string; where: string|null; stage: string;
             release: string|null; cc: string|null;
-            fixes: {sha: string; release: string|null; known: boolean}[]}[];
+            fixes: {sha: string; release: string|null; known: boolean}[];
+            mainline: string|null}[];    // kernel: "mainline: v6.19-rc1", "mainline: only in
+                                         // linux-next", "not in the repository"; else null
   branches: {series: string; skipped: boolean; rows: BranchRow[]}[];  // kernel only, newest series first
   failed: {series: string; date: string; url: string}[];
   hint: string|null;
@@ -564,8 +577,9 @@ back to them. Only the page folds them away (Task 10).
       `pid == child_pid`.
   - `class Scheduler`, constructed as `Scheduler(runner, paths, *, interval_s: float,
     now=time.time)`.
-    - `next_at(conn) -> int`: the newest run's `started_at + interval_s`, whatever its trigger or
-      status; `now()` when there are no runs.
+    - `next_at(conn) -> int`: the newest *full* run's `started_at + interval_s`, whatever its
+      trigger or status; `now()` when there is none. A partial run (`ptl add`, POST
+      /api/patches, `ptl fetch NAME`) never postpones it.
     - `tick() -> None`:
       - Calls `runner.poll()`.
       - If `now() >= next_at` and no child is alive, calls `runner.start("schedule")`.
@@ -840,7 +854,8 @@ back to them. Only the page folds them away (Task 10).
     - Within each list: unread first, then `last_activity` descending.
     - `idle` holds the cards with `idle && !unread`. An unread idle card stays in view until it
       is read.
-    - `older` holds the cards with `finished && finished_at < now - 30*86400`.
+    - `older` holds the cards with `finished && finished_at < now - 30*86400 && !unread`. An
+      unread card never folds.
   - **`Board`:**
     - Six columns titled "Title · N", where N counts every card, folded ones included.
     - Each column shows its cards, then a "+N idle" toggle, then a "+N older" toggle. Each toggle
@@ -908,14 +923,15 @@ back to them. Only the page folds them away (Task 10).
       note.
     - A "Since you read it on D" box listing `since.changes[].text`. It reads "Not read yet" when
       `since.at` is null, and is hidden when there are no changes.
-    - For kernel patches, a stable table per commit:
+    - For kernel patches with commits, whether or not there are branch rows: each commit's
+      line (sha, subject) with its Fixes, `Cc: stable` (or `no Cc: stable`) and `mainline` text.
+    - For kernel patches with branch rows, a stable table:
       - Columns: branch, state, detail (`detail` lines), and prerequisites with
         `prereqs[].text`, the first 8 shown and "show all" for the rest.
       - Each row has a "won't backport" button (`skip`) or "backport again" (`unskip`).
-    - Under the table:
-      - the Fixes/Cc line;
-      - "FAILED mails from stable: none" or the list;
-      - the hint.
+    - Under it, "FAILED mails from stable: none" or the list (when there are branch rows or
+      FAILED mails).
+    - The hint, whenever it is set: a released patch without `Cc: stable` has no branch rows.
     - For other projects with commits, a commit list.
     - A thread summary from `thread`, indented by depth, with a dot when new.
     - Recent history: the first 5 entries.

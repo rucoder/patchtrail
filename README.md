@@ -44,7 +44,9 @@ Then pick one:
        git clone https://github.com/rucoder/patchtrail && cd patchtrail
        make install
 
-   `make install` runs `npm ci && npm run build` in `web/`, then `uv tool install --force .`.
+   `make install` runs `npm ci && npm run build` in `web/`, then `uv tool install --force
+   --reinstall .`. `--reinstall` makes uv build the checkout again instead of reusing a cached
+   build of the same version.
 
 3. **`uv tool install git+https://github.com/rucoder/patchtrail`.** This gives the command
    line and the JSON API, but not the page: the page is built, not stored in git. The server
@@ -52,7 +54,12 @@ Then pick one:
 
 `patchtrail` and `ptl` land in `~/.local/bin`. If your shell does not find them, run
 `uv tool update-shell` and open a new shell. To upgrade, install the newer wheel the same way
-(add `--force`), or run `uv tool upgrade patchtrail` if you installed from git.
+(add `--force`), run `make install` again in a checkout, or run `uv tool upgrade patchtrail` if
+you installed from git. If you run the service, restart it afterwards so it runs the new code,
+and rewrite its unit in case that changed too:
+
+    ptl service install                  # rewrites the unit; does not restart a running service
+    systemctl --user restart patchtrail
 
 ## First run
 
@@ -139,10 +146,10 @@ with the change. Nothing is marked read until you say so:
 
 **The board.** One column per stage: Submitted, Reviewed, Accepted, Applied, Released,
 Backports. Each patch is a card with its subject, its standing and its project. Unread cards come
-first, then the newest activity. Each column has two folds:
+first, then the newest activity. Each column has two folds, and an unread card is never folded:
 - `+N idle`: patches with no commit and no mail for `idle_days` days (see
   [Configuration](#configuration)). They stay tracked and listed; the fold only keeps old
-  patches out of the way. An unread patch is never folded as idle.
+  patches out of the way.
 - `+N older`: patches that have been finished for more than 30 days.
 
 **Filters.** The top bar has:
@@ -152,8 +159,10 @@ first, then the newest activity. Each column has two folds:
 - `Add thread`, which tracks a thread by name and Message-ID or lore URL, like `ptl add`.
 
 **Fetch now.** Starts a fetch. While it runs the button shows the phase, the step and the time
-spent; click it for the run's log. The bar also shows when the last fetch finished and when the
-next one is due, and says so if the last fetch failed.
+spent; click it for the run's log. The bar also shows when the last full fetch finished and when
+the next one is due, and says so if the last one failed or was interrupted (killed after
+`fetch_timeout_hours`, crashed, or stopped with the service). Fetching one patch, as `Add
+thread`, `ptl add` or `ptl fetch NAME` do, does not move the next scheduled fetch.
 
 **The detail panel.** Click a card (or open `/p/NAME`) for a panel below the board, with three
 tabs:
@@ -161,7 +170,9 @@ tabs:
   for the kernel each stable branch with its state and a `won't backport` button (`backport
   again` to undo).
 - *Thread*: every mail of the patch as text, coloured like neomutt, with new mails marked.
-  Quoted text is folded. It shows the command to read the thread in neomutt.
+  Quoted text is coloured by depth, and a diff longer than 60 lines is folded after its first
+  60. It shows the command to read the thread in neomutt, to select and copy (with a Copy
+  button where the browser allows it).
 - *History*: what changed at each fetch.
 
 The panel's buttons are the page's actions: mark read or unread, hide or unhide, mark applied,
@@ -190,8 +201,8 @@ To keep it running, install it as a systemd user service:
 
 A user service stops when you log out, unless lingering is on. `install` turns it on. If it
 cannot, it prints the command to run yourself: `sudo loginctl enable-linger $USER`. The unit
-starts the Python that ran `install` and keeps `$PATCHTRAIL_HOME` if you set it, so run
-`install` again after you reinstall patchtrail somewhere else.
+starts the Python that ran `install` and keeps `$PATCHTRAIL_HOME` and `$PATCHTRAIL_FROM` if
+you set them, so run `install` again after you reinstall patchtrail somewhere else.
 
 With the default `listen = "0.0.0.0:8470"` the page is reachable from other machines. On your
 laptop, open `http://<server>:8470`, with the server's hostname or address. A patch has its own
@@ -206,9 +217,14 @@ them, close them and start fetches. Keep the service on a trusted network, or bi
 `127.0.0.1` and use an SSH tunnel. Do not put it on the internet.
 
 The API refuses requests that change something unless they are JSON (`Content-Type:
-application/json`), and refuses a browser request from another site. That keeps a web page
-elsewhere from driving your service, but it is not access control. The API never takes a git
-URL, and the only network fetch it can start is a lore fetch by Message-ID.
+application/json`), and refuses a browser request from another site. It also answers only
+requests addressed to a host it knows (the `Host` header): an IP address, `localhost`, this
+machine's host name and full domain name, and any name in `hosts` in `config.toml`. Anything
+else gets 403 `unknown Host NAME; add it to hosts in config.toml`. That stops a web page
+elsewhere from reaching it through a DNS name it controls (DNS rebinding). If you open the page
+by another name, such as a DNS alias, add it to `hosts`. None of this is access control. The
+API never takes a git URL, and the only network fetch it can start is a lore fetch by
+Message-ID.
 
 ## Everyday use
 
@@ -311,6 +327,10 @@ addresses = ["you@example.org", "you@work.example.com"]
 # For the service (`ptl serve`): where it listens, and hours between fetches.
 listen = "0.0.0.0:8470"
 interval_hours = 3
+
+# Host names, besides IP addresses, localhost and this machine's own names, that you open the
+# page by, for example a DNS alias. The API refuses any other (see "No login").
+# hosts = ["patchtrail.example.org"]
 
 # The service kills a fetch that runs longer than this many hours.
 fetch_timeout_hours = 4

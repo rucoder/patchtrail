@@ -6,7 +6,7 @@ web:
 	cd web && npm ci && npm run build
 
 install: web
-	uv tool install --force .
+	uv tool install --force --reinstall .
 
 test-web:
 	cd web && npm ci && npm test

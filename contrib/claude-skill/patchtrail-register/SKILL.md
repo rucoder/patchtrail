@@ -32,12 +32,13 @@ Registering a patch right after sending it:
   status 1. It fails only on a malformed argument or a name that belongs to a different patch;
   for the latter, pick another name.
 
-If `ptl` is not installed, tell the user and stop. Don't install it yourself.
-
-On a machine without `ptl`, when the user runs the patchtrail service elsewhere, the same
-registration is `POST http://<server>:8470/api/patches` with `Content-Type: application/json`
-and `{"name", "msgid", "links", "note"}`; see `docs/agents.md`. Ask the user for the server's
-address; don't guess it.
+Which way to register:
+1. If `ptl` is installed, use `ptl add` as above.
+2. Otherwise, if the user runs the patchtrail service on another machine, POST the same
+   registration to it: `POST http://<server>:8470/api/patches` with `Content-Type:
+   application/json` and `{"name", "msgid", "links", "note"}`; see `docs/agents.md`. Ask the
+   user for the server's address; don't guess it.
+3. Otherwise tell the user and stop. Don't install `ptl` yourself.
 
 ## Finding the Message-ID
 
