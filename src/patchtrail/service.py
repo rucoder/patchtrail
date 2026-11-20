@@ -73,7 +73,8 @@ class Runner:
             finally:
                 conn.close()
             argv = [sys.executable, "-m", "patchtrail", "fetch", "--trigger", trigger,
-                    *(["--lore-only"] if lore_only else []), *(names or [])]
+                    *(["--lore-only"] if lore_only else []),
+                    *(["--", *names] if names else [])]     # a name may start with "-"
             self._child = self._spawn(argv, process_group=0, stdin=subprocess.DEVNULL,
                                       stdout=subprocess.DEVNULL)
             self._started = self._now()
@@ -108,10 +109,15 @@ class Runner:
         self._reap(error)
 
     def terminate(self) -> None:
-        """Stop a running fetch because the service is shutting down."""
+        """Stop a running fetch because the service is shutting down. A child that is
+        already gone (systemd signalled it, or it died meanwhile) leaves its run row
+        marked the same way."""
         with self._lock:
             if self._alive():
                 self._kill(min(self._grace_s, 5), "stopped with the service")
+            elif self._child is not None:
+                self._child = None
+                self._reap("stopped with the service")
 
     @staticmethod
     def _signal(pgid: int, sig: int) -> None:
@@ -168,6 +174,14 @@ def unit_path() -> Path:
     return Path(base) / "systemd" / "user" / UNIT
 
 
+def _environment(name: str, value: str) -> str:
+    """An Environment= line; quoted when the value has spaces, quotes or backslashes."""
+    assignment = f"{name}={value}".replace("%", "%%")      # % starts a unit specifier
+    if any(c.isspace() or c in "\"'\\" for c in value):
+        assignment = '"' + assignment.replace("\\", "\\\\").replace('"', '\\"') + '"'
+    return f"Environment={assignment}"
+
+
 def unit_text() -> str:
     lines = [
         "[Unit]",
@@ -178,10 +192,13 @@ def unit_text() -> str:
         f"ExecStart={sys.executable} -m patchtrail serve",
         "Restart=on-failure",
         "RestartSec=10",
+        # SIGTERM to the server only: it stops the fetch child itself and records why.
+        "KillMode=mixed",
     ]
-    home = os.environ.get("PATCHTRAIL_HOME")
-    if home:
-        lines.append(f"Environment=PATCHTRAIL_HOME={home}")
+    for name in ("PATCHTRAIL_HOME", "PATCHTRAIL_FROM"):
+        value = os.environ.get(name)
+        if value:
+            lines.append(_environment(name, value))
     lines += ["", "[Install]", "WantedBy=default.target", ""]
     return "\n".join(lines)
 

@@ -53,10 +53,28 @@ def test_start_spawns_child_with_trigger():
     r.start("page", ["a", "b"], lore_only=True)
     argv, kw = spawn.calls[0]
     assert argv == [sys.executable, "-m", "patchtrail", "fetch", "--trigger", "page",
-                    "--lore-only", "a", "b"]
+                    "--lore-only", "--", "a", "b"]
     assert kw["process_group"] == 0
     assert kw["stdin"] == subprocess.DEVNULL and kw["stdout"] == subprocess.DEVNULL
     assert r.child_pid == 4242
+
+
+def test_names_after_double_dash_reach_ptl_fetch(monkeypatch):    # final review M6
+    from patchtrail import cli, store
+    spawn = Spawner()
+    r = service.Runner(paths(), timeout_s=10, spawn=spawn)
+    r.start("api", ["-odd"], lore_only=True)
+    argv = spawn.calls[0][0]
+    assert argv[argv.index("--") + 1:] == ["-odd"]
+    store.add_patch(_conn(), "-odd", now=1)              # a valid name may start with "-"
+    seen = {}
+    monkeypatch.setattr(cli, "run_fetch", lambda *a, **k: seen.update(k) or 1)
+    assert cli.main(argv[3:]) == 0                       # what the child runs: `ptl fetch ...`
+    assert seen["patch_names"] == ["-odd"] and seen["lore_only"] is True
+    spawn.calls.clear()
+    r._child = None
+    r.start("schedule")
+    assert spawn.calls[0][0][3:] == ["fetch", "--trigger", "schedule"]
 
 
 def test_start_refused_while_child_alive():
@@ -320,6 +338,22 @@ def test_terminate_stops_child_and_marks_interrupted():
         _cleanup(r)
 
 
+def test_terminate_after_systemd_killed_the_child():             # final review M1
+    # Before KillMode=mixed, systemd signalled the whole cgroup: the child is dead by
+    # the time the server calls terminate(), its run row still 'running'.
+    code = _ROW + "os.kill(os.getpid(), signal.SIGKILL)\n"
+    r = service.Runner(paths(), timeout_s=3600, grace_s=0.5, spawn=_group_child(code))
+    try:
+        r.start("page")
+        r._child.wait(15)
+        r.terminate()
+        assert r.child_pid is None and r._child is None
+        row = _conn().execute("SELECT * FROM runs").fetchone()
+        assert row["status"] == "interrupted" and row["error"] == "stopped with the service"
+    finally:
+        _cleanup(r)
+
+
 # ---- systemd user unit (Task 8) ----
 
 class FakeRun:
@@ -346,9 +380,22 @@ def test_unit_text_exec_and_home(monkeypatch):
     assert f"ExecStart={sys.executable} -m patchtrail serve\n" in t
     assert "Restart=on-failure\nRestartSec=10\n" in t
     assert "WantedBy=default.target" in t and "PATCHTRAIL_HOME" not in t
+    assert "KillMode=mixed\n" in t                  # final review M1: the server stops the child
     monkeypatch.setenv("PATCHTRAIL_HOME", "/srv/ptl")
     assert "Environment=PATCHTRAIL_HOME=/srv/ptl\n" in service.unit_text()
+    monkeypatch.setenv("PATCHTRAIL_HOME", "/srv/my ptl/100%")
+    assert 'Environment="PATCHTRAIL_HOME=/srv/my ptl/100%%"\n' in service.unit_text()
     assert service.unit_path().name == "patchtrail.service"
+
+
+def test_unit_carries_patchtrail_from(monkeypatch):                 # final review M7
+    monkeypatch.delenv("PATCHTRAIL_FROM", raising=False)
+    assert "PATCHTRAIL_FROM" not in service.unit_text()
+    monkeypatch.setenv("PATCHTRAIL_FROM", "me@example.org")
+    assert "Environment=PATCHTRAIL_FROM=me@example.org\n" in service.unit_text()
+    monkeypatch.setenv("PATCHTRAIL_FROM", "me@example.org other@example.org")
+    assert ('Environment="PATCHTRAIL_FROM=me@example.org other@example.org"\n'
+            in service.unit_text())
     assert service.unit_path().parent.parts[-2:] == ("systemd", "user")
 
 
