@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
+import time
 import urllib.request
 
 import pytest
@@ -22,12 +23,16 @@ def hermetic(tmp_path, monkeypatch):
     b4.write_text(f"#!/bin/sh\ntouch '{called}'\necho 'b4 called in tests' >&2\nexit 99\n")
     b4.chmod(0o755)
     monkeypatch.setenv("PATCHTRAIL_B4", str(b4))
+    monkeypatch.setenv("TZ", "UTC")     # local-time dates must not depend on the machine
+    time.tzset()
 
     def no_network(*args, **kwargs):
         raise AssertionError("network in tests")
 
     monkeypatch.setattr(urllib.request, "urlopen", no_network)
     yield home
+    monkeypatch.undo()
+    time.tzset()
     if called.exists():
         pytest.fail("the test ran the real b4; set PATCHTRAIL_B4 to a fake")
 
