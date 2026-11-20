@@ -61,11 +61,12 @@ export function App() {
     return () => clearInterval(t);
   }, [busy, refreshStatus]);
 
-  // The list: every 30 s, and when a run finishes (last_run changes).
-  const lastRunId = status?.last_run?.id ?? null;
+  // The list: every 30 s, and when a run starts or ends. last_run only follows full runs
+  // that went ok; a lore-only run (Add thread, an agent) or a failed one ends without it.
+  const runKey = `${status?.last_run?.id ?? ""}:${status?.running?.id ?? ""}`;
   useEffect(() => {
     void reloadPatches();
-  }, [reloadPatches, lastRunId]);
+  }, [reloadPatches, runKey]);
   useEffect(() => {
     const t = setInterval(() => void reloadPatches(), POLL_IDLE_MS);
     return () => clearInterval(t);

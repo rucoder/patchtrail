@@ -51,6 +51,16 @@ describe("columns", () => {
     expect(names(c.cards).sort()).toEqual(["act", "unr"]);
   });
 
+  it("never folds an unread finished card as older", () => {
+    const cs = columns([
+      card("unr", { finished: true, finished_at: day(60), unread: true }),
+      card("read", { finished: true, finished_at: day(60) }),
+    ], NOW);
+    const c = col(cs, "submitted");
+    expect(names(c.older)).toEqual(["read"]);
+    expect(names(c.cards)).toEqual(["unr"]);
+  });
+
   it("never puts a card in both folds", () => {
     const cs = columns([card("x", { idle: true, finished: true, finished_at: day(60) })], NOW);
     const c = col(cs, "submitted");

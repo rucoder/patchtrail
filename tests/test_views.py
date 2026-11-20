@@ -133,6 +133,27 @@ def test_detail_kernel(populated_kernel):
     assert all(set(c) == {"field", "text", "flags"} for h in d["history"] for c in h["changes"])
 
 
+def test_detail_commit_mainline_text(populated_kernel):               # final review I5
+    row = store.get_patch(populated_kernel, "iowq-cpuset")
+    d = views.detail(populated_kernel, row, frozenset(), now=NOW)
+    assert d["commits"][0]["mainline"] == "mainline: v7.4-rc1"
+    pid = _new(populated_kernel, "k")
+    base = {"subject": "s", "stage": "applied", "release": None, "stable": False, "cc": None,
+            "fixes": []}
+    commits = [{**base, "sha": "1" * 40, "where": "next"},
+               {**base, "sha": "2" * 40, "where": "tree:https://git.example.org/x.git for-next"},
+               {**base, "sha": "3" * 40, "where": "missing"}]
+    snapshot.record(populated_kernel, pid, _state("applied", ["k@x"], "t", commits=commits), 5)
+    d = views.detail(populated_kernel, store.get_patch(populated_kernel, "k"), frozenset(), now=NOW)
+    assert [c["mainline"] for c in d["commits"]] == [
+        "mainline: only in linux-next", "mainline: only in for-next", "not in the repository"]
+    pid = _new(populated_kernel, "e", project="erofs-utils")
+    snapshot.record(populated_kernel, pid, _state("applied", ["e@x"], "t", commits=[
+        {**base, "sha": "4" * 40, "where": "upstream"}]), 5)
+    d = views.detail(populated_kernel, store.get_patch(populated_kernel, "e"), frozenset(), now=NOW)
+    assert d["commits"][0]["mainline"] is None
+
+
 def test_branch_was_not_exposed(conn):
     pid = _new(conn, "p")
     e = _branch("skipped")

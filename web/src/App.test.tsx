@@ -78,6 +78,18 @@ describe("App", () => {
     expect(getPatches.mock.calls.length - before).toBe(1);
   });
 
+  it("re-fetches the patches when a run ends that leaves last_run alone", async () => {
+    // A lore-only run (Add thread, an agent's POST) is not a full run: last_run stays.
+    const last = run({ id: 1, status: "ok", finished_at: 5 });
+    getStatus.mockResolvedValue(status({ running: run({ id: 2, trigger: "api" }), last_run: last }));
+    render(<App />);
+    await flush();
+    const before = getPatches.mock.calls.length;
+    getStatus.mockResolvedValue(status({ last_run: last }));
+    await advance(2_000);
+    expect(getPatches.mock.calls.length - before).toBe(1);
+  });
+
   it("reads the route from the URL and follows popstate", async () => {
     getPatches.mockResolvedValue({ patches: [card("iowq"), card("other")] });
     history.replaceState(null, "", "/p/iowq/thread");
@@ -115,11 +127,11 @@ describe("App", () => {
     const slow = { promise: new Promise<Status>((r) => (resolveSlow = r)), resolve: (s: Status) => resolveSlow(s) };
     getStatus.mockReset();
     getStatus.mockReturnValueOnce(slow.promise);
-    getStatus.mockResolvedValue(status({ error: { run_id: 1, at: 1_700_000_000, error: "fresh" } }));
+    getStatus.mockResolvedValue(status({ error: { run_id: 1, at: 1_700_000_000, error: "fresh", status: "failed" } }));
     render(<App />);
     await advance(30_000); // a second, newer request answers first
     expect(screen.getByText(/fresh/)).toBeTruthy();
-    await act(async () => slow.resolve(status({ error: { run_id: 1, at: 1_700_000_000, error: "stale" } })));
+    await act(async () => slow.resolve(status({ error: { run_id: 1, at: 1_700_000_000, error: "stale", status: "failed" } })));
     expect(screen.queryByText(/stale/)).toBeNull();
     expect(screen.getByText(/fresh/)).toBeTruthy();
   });

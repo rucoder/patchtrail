@@ -81,16 +81,22 @@ describe("Thread", () => {
     expect(text.indexOf("6.1.y backport")).toBeLessThan(text.indexOf("body of b"));
   });
 
-  it("copies the neomutt command, and survives a missing clipboard", async () => {
-    show([{ label: null, mails: [mail("a")] }], "my-patch");
-    const btn = await screen.findByRole("button", { name: /Open in neomutt/ });
-    expect(btn.textContent).toContain("ptl open my-patch");
+  it("shows the neomutt command as text to select, without a clipboard (plain http)", async () => {
     vi.stubGlobal("navigator", { ...navigator, clipboard: undefined });
-    await userEvent.click(btn);
-    const writeText = vi.fn().mockRejectedValue(new Error("denied"));
+    show([{ label: null, mails: [mail("a")] }], "my-patch");
+    const cmd = await screen.findByText("ptl open my-patch");
+    expect(cmd.className).toContain("cmd");                  // user-select: all
+    expect(screen.queryByRole("button", { name: "Copy" })).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("copies the neomutt command when there is a clipboard", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
-    await userEvent.click(btn);
+    show([{ label: null, mails: [mail("a")] }], "my-patch");
+    await userEvent.click(await screen.findByRole("button", { name: "Copy" }));
     expect(writeText).toHaveBeenCalledWith("ptl open my-patch");
+    expect(await screen.findByRole("button", { name: "Copied" })).toBeTruthy();
     vi.unstubAllGlobals();
   });
 

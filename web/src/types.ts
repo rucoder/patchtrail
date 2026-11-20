@@ -17,11 +17,12 @@ export type Status = {
   version: string;
   now: number;
   interval_hours: number;
-  next_fetch_at: number | null; // newest run's started_at + interval; now if no run yet
-  running: Run | null; // the run in progress, from any process
+  next_fetch_at: number | null; // newest full run's started_at + interval; now if no full run yet
+  running: Run | null; // the run in progress, from any process, full or not
   starting: boolean; // the service started a child whose run row isn't written yet
-  last_run: Run | null; // newest run that has finished
-  error: { run_id: number; at: number; error: string } | null; // newest failed run, if no ok run after it
+  last_run: Run | null; // newest full run that finished ok ("fetched")
+  // newest full run that failed, or was interrupted with a reason, if no ok full run after it
+  error: { run_id: number; at: number; error: string; status: "failed" | "interrupted" } | null;
 };
 
 export type Link = { url: string; label: string };
@@ -96,6 +97,7 @@ export type Detail = Card & {
     release: string | null;
     cc: string | null;
     fixes: { sha: string; release: string | null; known: boolean }[];
+    mainline: string | null; // kernel: "mainline: v6.19-rc1", "not in the repository"; else null
   }[];
   branches: { series: string; skipped: boolean; rows: BranchRow[] }[]; // kernel only, newest series first
   failed: { series: string; date: string; url: string }[];

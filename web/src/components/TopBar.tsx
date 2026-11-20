@@ -24,7 +24,11 @@ export function TopBar({ status, patches, filters, onFilters, onStatus, onRefres
   const inScope = scope(patches, filters);
   const unread = inScope.filter((c) => c.unread).length;
   const turn = inScope.filter((c) => c.your_turn).length;
+  // last_run: the newest full run that finished ok. error: a newer full run that did not.
   const fetched = status?.last_run ? (status.last_run.finished_at ?? status.last_run.started_at) : null;
+  const err = status?.error ?? null;
+  const errText = err && `last fetch ${err.status === "interrupted" ? "interrupted" : "failed"} ` +
+    `${dayTime(err.at)}${err.error ? `: ${err.error}` : ""}`;
   const times: string[] = [];
   if (fetched !== null) times.push(`fetched ${clock(fetched)}`);
   if (status?.next_fetch_at != null) times.push(`next ${clock(status.next_fetch_at)}`);
@@ -48,9 +52,7 @@ export function TopBar({ status, patches, filters, onFilters, onStatus, onRefres
       </select>
       <span className="sp" />
       {connError && <span className="bad">cannot reach the service: {connError}</span>}
-      {status?.error && (
-        <span className="bad">fetch failed {dayTime(status.error.at)}: {status.error.error}</span>
-      )}
+      {errText && <span className="bad">{errText}</span>}
       {times.length > 0 && <span className="muted">{times.join(" · ")}</span>}
       <button type="button" className="btn" onClick={() => setAdding(true)}>Add thread</button>
       <FetchButton status={status} onStatus={onStatus} onRefresh={onRefresh}

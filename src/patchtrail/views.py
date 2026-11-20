@@ -184,6 +184,15 @@ def _steps(conn, row, state, stages, revs) -> list[dict]:
     return out
 
 
+def _mainline(project: str, c: dict) -> str | None:
+    """Where a kernel commit stands, as `ptl ls` says it; None for other projects."""
+    if project != "kernel" or not c.get("where"):
+        return None
+    if c["where"] == "missing":
+        return "not in the repository"
+    return "mainline: " + render.mainline_phrase(c, branch_only=True)
+
+
 def _branches(conn, row, state) -> list[dict]:
     per_series = state["branches"] if state else {}
     skips = store.skips(conn, row["id"])
@@ -222,7 +231,8 @@ def detail(conn, row, mine, *, now: int | None = None,
         "commits": [{"sha": c["sha"], "subject": c["subject"], "where": c.get("where"),
                      "stage": c["stage"], "release": c.get("release"), "cc": c.get("cc"),
                      "fixes": [{"sha": f["sha"], "release": f.get("release"),
-                                "known": f["known"]} for f in c["fixes"]]}
+                                "known": f["known"]} for f in c["fixes"]],
+                     "mainline": _mainline(row["project"], c)}
                     for c in (state["commits"] if state else [])],
         "branches": _branches(conn, row, state),
         "failed": [{"series": s, "date": d["date"], "url": d["url"]}

@@ -67,7 +67,7 @@ describe("Overview", () => {
   it("shows Fixes, Cc, FAILED mails and the hint", () => {
     show(detail("p", {
       commits: [{ sha: "c1", subject: "s", where: null, stage: "accepted", release: null, cc: "stable",
-        fixes: [{ sha: "84eacf177faa", release: "v6.12-rc1", known: true }] }],
+        fixes: [{ sha: "84eacf177faa", release: "v6.12-rc1", known: true }], mainline: "mainline: v6.13" }],
       branches: [{ series: "6.1.y", skipped: false, rows: [row()] }],
       failed: [{ series: "6.1.y", date: "2026-11-01", url: "https://x/f" }], hint: "a hint",
     }));
@@ -91,9 +91,43 @@ describe("Overview", () => {
     expect(screen.queryByText(/change-5/)).toBeNull();
   });
 
+  it("shows a kernel commit and the hint without branch rows", () => {
+    // A kbuild-like patch: released, no Cc: stable, so no stable branch is followed.
+    show(detail("p", {
+      commits: [{ sha: "0123456789abcdef", subject: "kbuild: fix the thing", where: "mainline",
+        stage: "released", release: "v6.19-rc1", cc: null,
+        fixes: [{ sha: "fedcba987654", release: null, known: true }], mainline: "mainline: v6.19-rc1" }],
+      branches: [], hint: "not tagged for stable: ask stable@ to take it",
+    }));
+    const line = screen.getByText("kbuild: fix the thing").closest("div")!;
+    expect(within(line).getByText(/0123456789ab/)).toBeTruthy();
+    expect(screen.getByText(/Fixes: fedcba987654 \(not released\)/)).toBeTruthy();
+    expect(screen.getByText(/no Cc: stable/)).toBeTruthy();
+    expect(screen.getByText(/mainline: v6\.19-rc1/)).toBeTruthy();
+    expect(screen.getByText("not tagged for stable: ask stable@ to take it")).toBeTruthy();
+    expect(screen.queryByText("Stable and longterm")).toBeNull();
+  });
+
+  it("names each commit above the stable table, with Cc and mainline", () => {
+    show(detail("p", {
+      commits: [
+        { sha: "aaaaaaaaaaaa1111", subject: "first", where: "mainline", stage: "released",
+          release: "v6.19", cc: "", fixes: [], mainline: "mainline: v6.19" },
+        { sha: "bbbbbbbbbbbb2222", subject: "second", where: "next", stage: "applied",
+          release: null, cc: "# 6.6.x", fixes: [{ sha: "c0ffee", release: null, known: false }],
+          mainline: "mainline: only in linux-next" }],
+      branches: [{ series: "6.6.y", skipped: false, rows: [row()] }],
+    }));
+    expect(screen.getByText("first")).toBeTruthy();
+    expect(screen.getByText("second")).toBeTruthy();
+    expect(screen.getByText(/Cc: stable · mainline: v6\.19$/)).toBeTruthy();
+    expect(screen.getByText(/Fixes: c0ffee \(unknown commit\) · Cc: stable # 6\.6\.x · mainline: only in linux-next/)).toBeTruthy();
+    expect(screen.getByText("Stable and longterm")).toBeTruthy();
+  });
+
   it("lists commits for a non-kernel project", () => {
     show(detail("p", { project: "qemu", commits: [{ sha: "deadbeef0000", subject: "fix it", where: null,
-      stage: "applied", release: "v9.0", cc: null, fixes: [] }] }));
+      stage: "applied", release: "v9.0", cc: null, fixes: [], mainline: null }] }));
     const c = screen.getByText("fix it").closest("div")!;
     expect(within(c).getByText(/deadbeef0000/)).toBeTruthy();
   });

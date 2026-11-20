@@ -25,6 +25,46 @@ function Prereqs({ list }: { list: BranchRow["prereqs"] }) {
   );
 }
 
+type Commit = Detail["commits"][number];
+
+/** As `ptl ls` says it: Fixes, Cc: stable and where the commit stands in mainline. */
+function commitTags(c: Commit): string {
+  const tags = c.fixes.map((f) => (f.known
+    ? `Fixes: ${f.sha.slice(0, 12)} (${f.release ?? "not released"})`
+    : `Fixes: ${f.sha} (unknown commit)`));
+  tags.push(c.cc === null ? "no Cc: stable" : `Cc: stable${c.cc ? ` ${c.cc}` : ""}`);
+  if (c.mainline) tags.push(c.mainline);
+  return tags.join(" · ");
+}
+
+/** A kernel patch's commits, its stable table when it follows any branch, and FAILED mails. */
+function Kernel({ d, act }: { d: Detail; act: ActFn }) {
+  return (
+    <>
+      {d.commits.length > 0 && (
+        <>
+          <div className="sec">Commits</div>
+          {d.commits.map((c) => (
+            <div key={c.sha} className="kc">
+              <div><span className="mono">{c.sha.slice(0, 12)}</span> {c.subject}</div>
+              <div className="muted">{commitTags(c)}</div>
+            </div>
+          ))}
+        </>
+      )}
+      {d.branches.length > 0 && <Stable d={d} act={act} />}
+      {(d.branches.length > 0 || d.failed.length > 0) && (
+        <div className="muted" style={{ marginTop: 6 }}>
+          FAILED mails from stable:{" "}
+          {d.failed.length === 0 ? "none" : d.failed.map((f, i) => (
+            <span key={f.url}>{i > 0 && ", "}<a href={f.url} target="_blank" rel="noopener noreferrer">{f.series} {f.date}</a></span>
+          ))}
+        </div>
+      )}
+    </>
+  );
+}
+
 function Stable({ d, act }: { d: Detail; act: ActFn }) {
   const multi = d.commits.length > 1;
   return (
@@ -48,25 +88,13 @@ function Stable({ d, act }: { d: Detail; act: ActFn }) {
           )))}
         </tbody>
       </table>
-      <div className="muted" style={{ marginTop: 6 }}>
-        {d.commits.flatMap((c) => c.fixes.map((f) => (
-          <span key={c.sha + f.sha}>Fixes <span className="mono">{f.sha.slice(0, 12)}</span>{f.release ? ` (${f.release})` : ""} · </span>
-        )))}
-        {d.commits.filter((c) => c.cc).map((c) => <span key={c.sha}>Cc: {c.cc} · </span>)}
-        <span>
-          FAILED mails from stable:{" "}
-          {d.failed.length === 0 ? "none" : d.failed.map((f, i) => (
-            <span key={f.url}>{i > 0 && ", "}<a href={f.url} target="_blank" rel="noopener noreferrer">{f.series} {f.date}</a></span>
-          ))}
-        </span>
-      </div>
-      {d.hint && <div className="muted hint">{d.hint}</div>}
     </>
   );
 }
 
 export function Overview({ d, card, act }: { d: Detail; card: Card; act: ActFn }) {
   const changes = d.since.changes;
+  const kernel = d.project === "kernel" || d.branches.length > 0;
   return (
     <>
       <div className="trail">
@@ -88,7 +116,7 @@ export function Overview({ d, card, act }: { d: Detail; card: Card; act: ActFn }
               {changes.map((c, i) => <div key={i}>{c.text}</div>)}
             </div>
           )}
-          {d.branches.length > 0 ? <Stable d={d} act={act} /> : d.commits.length > 0 && (
+          {kernel ? <Kernel d={d} act={act} /> : d.commits.length > 0 && (
             <>
               <div className="sec">Commits</div>
               {d.commits.map((c) => (
@@ -99,6 +127,7 @@ export function Overview({ d, card, act }: { d: Detail; card: Card; act: ActFn }
               ))}
             </>
           )}
+          {d.hint && <div className="muted hint">{d.hint}</div>}
         </div>
         <div>
           <LinksNote card={card} act={act} />

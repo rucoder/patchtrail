@@ -16,13 +16,15 @@ const order = (a: Card, b: Card) =>
 
 /**
  * Split the cards into the six columns. `older` (finished more than 30 days ago) and `idle`
- * (idle and read) are folds; a card is in at most one list, older taking precedence.
+ * (idle) are folds of read cards: an unread card never folds. A card is in at most one
+ * list, older taking precedence.
  */
 export function columns(cards: Card[], now: number): Column[] {
   const cutoff = now - OLDER_DAYS * 86400;
   return COLUMNS.map((stage) => {
     const mine = cards.filter((c) => c.stage === stage).sort(order);
-    const isOlder = (c: Card) => c.finished && c.finished_at !== null && c.finished_at < cutoff;
+    const isOlder = (c: Card) =>
+      c.finished && c.finished_at !== null && c.finished_at < cutoff && !c.unread;
     const isIdle = (c: Card) => c.idle && !c.unread && !isOlder(c);
     return {
       stage,

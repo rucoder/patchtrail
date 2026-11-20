@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { card, run, status } from "../fixtures";
 import { defaultFilters } from "../lib/filters";
-import { clock } from "../lib/time";
+import { clock, dayTime } from "../lib/time";
 import { TopBar } from "./TopBar";
 
 const noop = () => {};
@@ -60,11 +60,21 @@ describe("TopBar", () => {
     expect(screen.getByText(`fetched ${clock(fin)} · next ${clock(fin + 10800)}`)).toBeTruthy();
   });
 
+  it("says a fetch was interrupted, and why", () => {
+    const err = { run_id: 4, at: 1_700_000_000, error: "killed after 4 hours", status: "interrupted" as const };
+    bar({ status: status({ error: err, last_run: run({ id: 2, status: "ok", finished_at: 1_699_990_000 }) }) });
+    const el = screen.getByText(/last fetch interrupted/);
+    expect(el.className).toContain("bad");
+    expect(el.textContent).toContain(`${dayTime(err.at)}: killed after 4 hours`);
+    expect(screen.getByText(new RegExp(`fetched ${clock(1_699_990_000)}`))).toBeTruthy();
+  });
+
   it("shows the error banner while status.error is set, not after", () => {
-    const err = { run_id: 3, at: 1_700_000_000, error: "b4 exploded" };
+    const err = { run_id: 3, at: 1_700_000_000, error: "b4 exploded", status: "failed" as const };
     const { rerender } = bar({ status: status({ error: err }) });
     const el = screen.getByText(/b4 exploded/);
     expect(el.className).toContain("bad");
+    expect(el.textContent).toBe(`last fetch failed ${dayTime(err.at)}: b4 exploded`);
     rerender(
       <TopBar status={status()} patches={[]} filters={defaultFilters} onFilters={noop}
         onStatus={noop} onRefresh={noop} onAdded={noop} />,

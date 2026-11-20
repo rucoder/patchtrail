@@ -62,6 +62,7 @@ export function Thread({ name, tick }: { name: string; tick: number }) {
   const [groups, setGroups] = useState<MailGroup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [toggled, setToggled] = useState<Map<string, boolean>>(new Map());
+  const [copied, setCopied] = useState(false);
   const seq = useRef(0);
   useEffect(() => {
     const s = ++seq.current;
@@ -70,6 +71,7 @@ export function Thread({ name, tick }: { name: string; tick: number }) {
       (e) => { if (s === seq.current) setError(errText(e)); },
     );
   }, [name, tick]);
+  useEffect(() => setCopied(false), [name]);
 
   if (error) return <div className="perr bad" role="alert">{error}</div>;
   if (!groups) return <div className="muted">Loading…</div>;
@@ -77,10 +79,14 @@ export function Thread({ name, tick }: { name: string; tick: number }) {
   const isOpen = (m: Mail) => toggled.get(m.msgid) ?? m.new;
   const setAll = (v: boolean) => setToggled(new Map(all.map((m) => [m.msgid, v])));
   const allOpen = all.length > 0 && all.every(isOpen);
+  const command = `ptl open ${name}`;
+  // Browsers give a page the clipboard only in a secure context: not over plain http from
+  // another machine. The command is selectable text either way.
+  const canCopy = typeof navigator !== "undefined" && typeof navigator.clipboard?.writeText === "function";
   const copy = () => {
     try {
-      void navigator.clipboard?.writeText(`ptl open ${name}`)?.catch(() => {});
-    } catch { /* no clipboard over plain http */ }
+      navigator.clipboard.writeText(command).then(() => setCopied(true), () => {});
+    } catch { /* refused: the text is still there to select */ }
   };
   if (all.length === 0) return <div className="muted">No mails yet.</div>;
   return (
@@ -88,7 +94,9 @@ export function Thread({ name, tick }: { name: string; tick: number }) {
       <div className="thead" style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6 }}>
         <button type="button" className="btn" onClick={() => setAll(!allOpen)}>{allOpen ? "Collapse all" : "Expand all"}</button>
         <span className="sp" style={{ flex: 1 }} />
-        <button type="button" className="btn" onClick={copy}>Open in neomutt: <span className="mono">ptl open {name}</span></button>
+        <span className="muted">Open in neomutt:</span>
+        <code className="mono cmd">{command}</code>
+        {canCopy && <button type="button" className="btn" onClick={copy}>{copied ? "Copied" : "Copy"}</button>}
       </div>
       {groups.map((g, gi) => (
         <div key={g.label ?? `series${gi}`}>
