@@ -14,9 +14,11 @@ type Props = {
   onStatus: (s: Status) => void;
   onRefresh: () => void;
   onAdded: (name: string) => void;
+  connError?: string | null; // the service cannot be reached
+  clockOffset?: number;
 };
 
-export function TopBar({ status, patches, filters, onFilters, onStatus, onRefresh, onAdded }: Props) {
+export function TopBar({ status, patches, filters, onFilters, onStatus, onRefresh, onAdded, connError = null, clockOffset = 0 }: Props) {
   const [adding, setAdding] = useState(false);
   const projects = [...new Set(patches.map((c) => c.project))].sort();
   const inScope = scope(patches, filters);
@@ -45,12 +47,14 @@ export function TopBar({ status, patches, filters, onFilters, onStatus, onRefres
         <option value="closed">Closed</option>
       </select>
       <span className="sp" />
+      {connError && <span className="bad">cannot reach the service: {connError}</span>}
       {status?.error && (
         <span className="bad">fetch failed {dayTime(status.error.at)}: {status.error.error}</span>
       )}
       {times.length > 0 && <span className="muted">{times.join(" · ")}</span>}
       <button type="button" className="btn" onClick={() => setAdding(true)}>Add thread</button>
-      <FetchButton status={status} onStatus={onStatus} onRefresh={onRefresh} />
+      <FetchButton status={status} onStatus={onStatus} onRefresh={onRefresh}
+        clockOffset={clockOffset} />
       {adding && <AddDialog onClose={() => setAdding(false)} onAdded={onAdded} />}
     </div>
   );

@@ -10,6 +10,7 @@ export type AppState = {
   patches: Card[]; // all of them, hidden and closed included
   filters: Filters;
   route: Route;
+  clockOffset: number; // server clock minus the browser clock, seconds
   navigate: (r: Route) => void;
   reloadPatches: () => Promise<void>;
   /** Run an action on a patch, then re-fetch the patches. Throws ApiError. */

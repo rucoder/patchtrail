@@ -83,4 +83,40 @@ describe("FetchButton", () => {
     expect(await screen.findByText(/lore: 3 new mails/)).toBeTruthy();
     expect(getRunLog).toHaveBeenCalledWith(4, 0);
   });
+
+  it("keeps the log after the run ends and does not open it for the next run", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    getRunLog.mockResolvedValue({ lines: [{ n: 1, at: NOW, line: "done soon" }] });
+    const r4 = run({ id: 4, started_at: NOW - 5, phase: "p", step: 1, steps: 2 });
+    const { rerender } = render(<FetchButton status={status({ running: r4 })} onStatus={noop} onRefresh={noop} />);
+    await user.click(screen.getByText(/step 1 of 2/));
+    expect(await screen.findByText(/done soon/)).toBeTruthy();
+    rerender(<FetchButton status={status({ last_run: run({ id: 4, status: "ok", finished_at: NOW }) })}
+      onStatus={noop} onRefresh={noop} />);
+    expect(screen.getByRole("button", { name: "Fetch now" })).toBeTruthy();
+    expect(screen.getByText(/done soon/)).toBeTruthy(); // still readable
+    await user.click(screen.getByRole("button", { name: "close" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    // a later run does not pop it open
+    const r5 = run({ id: 5, started_at: NOW - 1, phase: "p", step: 1, steps: 2 });
+    rerender(<FetchButton status={status({ running: r5 })} onStatus={noop} onRefresh={noop} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("closes a left-open log when a different run starts", async () => {
+    const r4 = run({ id: 4, started_at: NOW - 5, phase: "p", step: 1, steps: 2 });
+    const r5 = run({ id: 5, started_at: NOW - 1, phase: "p", step: 1, steps: 2 });
+    const { rerender } = render(<FetchButton status={status({ running: r4 })} onStatus={noop} onRefresh={noop} />);
+    await userEvent.click(screen.getByText(/step 1 of 2/));
+    await screen.findByRole("dialog");
+    rerender(<FetchButton status={status({ last_run: run({ id: 4, status: "ok" }) })} onStatus={noop} onRefresh={noop} />);
+    rerender(<FetchButton status={status({ running: r5 })} onStatus={noop} onRefresh={noop} />);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("measures elapsed against the server clock", () => {
+    const r = run({ started_at: NOW + 3600 - 65, phase: "p", step: 1, steps: 2 });
+    render(<FetchButton status={status({ running: r })} onStatus={noop} onRefresh={noop} clockOffset={3600} />);
+    expect(screen.getByText("p · step 1 of 2 · 1m 05s")).toBeTruthy();
+  });
 });

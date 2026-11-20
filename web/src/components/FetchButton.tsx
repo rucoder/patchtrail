@@ -9,6 +9,7 @@ type Props = {
   status: Status | null;
   onStatus: (s: Status) => void; // a fresh Status from the 202 answer
   onRefresh: () => void; // ask the app to re-read the status now
+  clockOffset?: number; // server clock minus this browser's clock, seconds
 };
 
 function progress(run: Run | null, now: number): string {
@@ -19,11 +20,12 @@ function progress(run: Run | null, now: number): string {
   return parts.join(" · ");
 }
 
-export function FetchButton({ status, onStatus, onRefresh }: Props) {
+export function FetchButton({ status, onStatus, onRefresh, clockOffset = 0 }: Props) {
   const [pending, setPending] = useState(false); // clicked, no newer status yet
   const [conflict, setConflict] = useState<Run | null>(null); // progress from a 409
   const [error, setError] = useState<string | null>(null);
-  const [open, setOpen] = useState(false);
+  // The popover belongs to the run that was clicked; it stays until the user closes it.
+  const [log, setLog] = useState<{ id: number | null } | null>(null);
   const [, tick] = useState(0);
   const inflight = useRef(false);
   const first = useRef(true);
@@ -39,6 +41,12 @@ export function FetchButton({ status, onStatus, onRefresh }: Props) {
   }, [status]);
 
   const run = status?.running ?? conflict;
+  useEffect(() => {
+    if (!log || !run) return;
+    if (log.id === null) setLog({ id: run.id }); // clicked while starting: adopt the run
+    else if (log.id !== run.id) setLog(null); // a different run: never open by itself
+  }, [log, run]);
+
   const busy = !!run || !!status?.starting || pending;
 
   useEffect(() => {
@@ -69,22 +77,27 @@ export function FetchButton({ status, onStatus, onRefresh }: Props) {
     }
   }
 
+  const popover = log && (
+    <RunLog key="log" runId={log.id} running={!!run && run.id === log.id && run.status === "running"}
+      onClose={() => setLog(null)} />
+  );
   if (!busy) {
     return (
-      <>
+      <span className="fetch-wrap">
         <button type="button" className="btn" onClick={click}>Fetch now</button>
         {error && <span className="bad">{error}</span>}
-      </>
+        {popover}
+      </span>
     );
   }
+  const toggle = () => setLog(log ? null : { id: run?.id ?? null });
   return (
     <span className="fetch-wrap">
-      <span className="btn on" tabIndex={0} title="Show the run log" onClick={() => setOpen(!open)}
-        onKeyDown={(e) => e.key === "Enter" && setOpen(!open)}>
-        {progress(run, Date.now() / 1000)}
+      <span className="btn on" tabIndex={0} title="Show the run log" onClick={toggle}
+        onKeyDown={(e) => e.key === "Enter" && toggle()}>
+        {progress(run, Date.now() / 1000 + clockOffset)}
       </span>
-      {open && <RunLog runId={run?.id ?? null} running={!!run && run.status === "running"}
-        onClose={() => setOpen(false)} />}
+      {popover}
     </span>
   );
 }

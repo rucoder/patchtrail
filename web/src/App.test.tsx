@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { App } from "./App";
 import { card, run, status } from "./fixtures";
+import type { Status } from "./types";
 
 vi.mock("./api", async (orig) => ({
   ...(await orig<typeof import("./api")>()), getStatus: vi.fn(), getPatches: vi.fn(),
@@ -87,5 +88,38 @@ describe("App", () => {
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     expect(screen.getByText(/selected: other/)).toBeTruthy();
+  });
+
+  it("shows a connection error when the service is down and clears it on recovery", async () => {
+    getStatus.mockRejectedValue(new Error("Failed to fetch"));
+    getPatches.mockRejectedValue(new Error("Failed to fetch"));
+    render(<App />);
+    await flush();
+    expect(screen.getByText(/cannot reach the service: Failed to fetch/).className).toContain("bad");
+    getStatus.mockResolvedValue(status());
+    getPatches.mockResolvedValue({ patches: [] });
+    await advance(30_000);
+    expect(screen.queryByText(/cannot reach the service/)).toBeNull();
+  });
+
+  it("shows a connection error when only the patches request fails", async () => {
+    getPatches.mockRejectedValue(new Error("boom"));
+    render(<App />);
+    await flush();
+    expect(screen.getByText(/cannot reach the service: boom/)).toBeTruthy();
+  });
+
+  it("applies only the newest status when replies arrive out of order", async () => {
+    let resolveSlow!: (s: Status) => void;
+    const slow = { promise: new Promise<Status>((r) => (resolveSlow = r)), resolve: (s: Status) => resolveSlow(s) };
+    getStatus.mockReset();
+    getStatus.mockReturnValueOnce(slow.promise);
+    getStatus.mockResolvedValue(status({ error: { run_id: 1, at: 1_700_000_000, error: "fresh" } }));
+    render(<App />);
+    await advance(30_000); // a second, newer request answers first
+    expect(screen.getByText(/fresh/)).toBeTruthy();
+    await act(async () => slow.resolve(status({ error: { run_id: 1, at: 1_700_000_000, error: "stale" } })));
+    expect(screen.queryByText(/stale/)).toBeNull();
+    expect(screen.getByText(/fresh/)).toBeTruthy();
   });
 });

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { act, getPatches, getStatus } from "./api";
 import { AppContext, type AppState } from "./app-context";
 import { TopBar } from "./components/TopBar";
@@ -16,18 +16,34 @@ export function App() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
 
-  const refreshStatus = useCallback(async () => {
-    try {
-      setStatus(await getStatus());
-    } catch {
-      // keep the last status; the next poll tries again
-    }
+  const [clockOffset, setClockOffset] = useState(0); // server clock minus ours, seconds
+  const [connError, setConnError] = useState<string | null>(null);
+  const issued = useRef(0); // sequence of status requests and fresh statuses
+  const applied = useRef(0); // newest sequence applied so far
+
+  const applyStatus = useCallback((s: Status, seq: number) => {
+    if (seq <= applied.current) return; // a stale reply must not overwrite a newer one
+    applied.current = seq;
+    setStatus(s);
+    setClockOffset(s.now - Date.now() / 1000);
   }, []);
+  const refreshStatus = useCallback(async () => {
+    const seq = ++issued.current;
+    try {
+      applyStatus(await getStatus(), seq);
+      setConnError(null);
+    } catch (e) {
+      // keep the last status; the next poll retries
+      setConnError(e instanceof Error ? e.message : String(e));
+    }
+  }, [applyStatus]);
+  const onStatus = useCallback((s: Status) => applyStatus(s, ++issued.current), [applyStatus]);
   const reloadPatches = useCallback(async () => {
     try {
       setPatches((await getPatches()).patches);
-    } catch {
-      // keep the last list
+      setConnError(null);
+    } catch (e) {
+      setConnError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -72,7 +88,10 @@ export function App() {
     [reloadPatches],
   );
 
-  const state: AppState = { status, patches, filters, route, navigate, reloadPatches, runAction };
+  const state: AppState = useMemo(
+    () => ({ status, patches, filters, route, navigate, reloadPatches, runAction, clockOffset }),
+    [status, patches, filters, route, navigate, reloadPatches, runAction, clockOffset],
+  );
   const shown = useMemo(() => visible(patches, filters), [patches, filters]);
 
   return (
@@ -83,7 +102,9 @@ export function App() {
           patches={patches}
           filters={filters}
           onFilters={setFilters}
-          onStatus={setStatus}
+          onStatus={onStatus}
+          connError={connError}
+          clockOffset={clockOffset}
           onRefresh={() => void refreshStatus()}
           onAdded={(name) => {
             void reloadPatches();
