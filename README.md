@@ -14,27 +14,45 @@ queued, applies cleanly, or conflicts.
 It keeps history, so after a few days away you see exactly what changed since you last read
 each patch.
 
-The commands are `patchtrail` and its short form `ptl`. This version is the command line. A
-background service with a web page is coming next.
+The commands are `patchtrail` and its short form `ptl`. Besides the command line, patchtrail
+can run as a background service that fetches every few hours and serves a web page with the
+same information (see [The web page](#the-web-page) and
+[Running the service](#running-the-service)).
 
 ## Requirements
 
 - Linux with git 2.40 or newer.
 - [uv](https://docs.astral.sh/uv/). It installs Python 3.12 itself if the system has none.
+- Node 20 or newer, only to build the web page from a checkout. A release wheel needs no Node.
+- systemd, only for `ptl service install`.
 - A few GB of disk for the Linux clone that kernel tracking uses.
 - neomutt, optional, for `ptl open`.
 
 ## Install
 
     curl -LsSf https://astral.sh/uv/install.sh | sh        # if you have no uv yet
-    uv tool install git+https://github.com/rucoder/patchtrail
+
+Then pick one:
+
+1. **A release wheel.** It contains the web page and needs no Node. Take the URL from the
+   [releases page](https://github.com/rucoder/patchtrail/releases):
+
+       uv tool install https://github.com/rucoder/patchtrail/releases/download/vX.Y.Z/patchtrail-X.Y.Z-py3-none-any.whl
+
+2. **A checkout.** It builds the page, so it needs Node 20 or newer:
+
+       git clone https://github.com/rucoder/patchtrail && cd patchtrail
+       make install
+
+   `make install` runs `npm ci && npm run build` in `web/`, then `uv tool install --force .`.
+
+3. **`uv tool install git+https://github.com/rucoder/patchtrail`.** This gives the command
+   line and the JSON API, but not the page: the page is built, not stored in git. The server
+   then shows a short notice at `/` instead of the page.
 
 `patchtrail` and `ptl` land in `~/.local/bin`. If your shell does not find them, run
-`uv tool update-shell` and open a new shell. To upgrade later:
-
-    uv tool upgrade patchtrail
-
-From a checkout, `make install` does the same (`uv tool install --force .`).
+`uv tool update-shell` and open a new shell. To upgrade, install the newer wheel the same way
+(add `--force`), or run `uv tool upgrade patchtrail` if you installed from git.
 
 ## First run
 
@@ -113,6 +131,84 @@ with the change. Nothing is marked read until you say so:
 - `ptl read` marks a patch read.
 - `ptl unread` flags it again for later.
 - `ptl history` shows every recorded change.
+
+## The web page
+
+`ptl serve` (or the service below) serves a page at `http://<server>:8470`. It shows what
+`ptl status` and `ptl ls` show, and can do most of what the everyday commands do.
+
+**The board.** One column per stage: Submitted, Reviewed, Accepted, Applied, Released,
+Backports. Each patch is a card with its subject, its standing and its project. Unread cards come
+first, then the newest activity. Each column has two folds:
+- `+N idle`: patches with no commit and no mail for `idle_days` days (see
+  [Configuration](#configuration)). They stay tracked and listed; the fold only keeps old
+  patches out of the way. An unread patch is never folded as idle.
+- `+N older`: patches that have been finished for more than 30 days.
+
+**Filters.** The top bar has:
+- a button per project;
+- `Unread only` and `Your turn`, each with a count;
+- a view menu: Open, Hidden or Closed;
+- `Add thread`, which tracks a thread by name and Message-ID or lore URL, like `ptl add`.
+
+**Fetch now.** Starts a fetch. While it runs the button shows the phase, the step and the time
+spent; click it for the run's log. The bar also shows when the last fetch finished and when the
+next one is due, and says so if the last fetch failed.
+
+**The detail panel.** Click a card (or open `/p/NAME`) for a panel below the board, with three
+tabs:
+- *Overview*: the steps of the patch, what changed since you last read it, its commits, and
+  for the kernel each stable branch with its state and a `won't backport` button (`backport
+  again` to undo).
+- *Thread*: every mail of the patch as text, coloured like neomutt, with new mails marked.
+  Quoted text is folded. It shows the command to read the thread in neomutt.
+- *History*: what changed at each fetch.
+
+The panel's buttons are the page's actions: mark read or unread, hide or unhide, mark applied,
+close (rejected, dropped or moved, with a note), add and remove links, edit the note. Opening a
+card, a tab or a mail never marks anything read.
+
+Some things are only in the command line: merge, split, rename, delete, setting a maintainer
+tree. The page never takes a git URL.
+
+## Running the service
+
+    ptl serve [--listen HOST:PORT]
+
+`ptl serve` runs in the foreground. It serves the page and the JSON API, and every
+`interval_hours` it starts a fetch. Each fetch runs in a child process, so the page stays up
+while it works. A fetch that runs longer than `fetch_timeout_hours` is killed. Stop with ^C.
+
+To keep it running, install it as a systemd user service:
+
+| Command | What it does |
+|---|---|
+| `ptl service install` | Writes `~/.config/systemd/user/patchtrail.service`, enables and starts it, and prints the page's address. |
+| `ptl service status` | `systemctl --user status patchtrail`. |
+| `ptl service logs [-f]` | The service's journal; `-f` follows it. |
+| `ptl service uninstall` | Stops and removes the service. Your data stays. |
+
+A user service stops when you log out, unless lingering is on. `install` turns it on. If it
+cannot, it prints the command to run yourself: `sudo loginctl enable-linger $USER`. The unit
+starts the Python that ran `install` and keeps `$PATCHTRAIL_HOME` if you set it, so run
+`install` again after you reinstall patchtrail somewhere else.
+
+With the default `listen = "0.0.0.0:8470"` the page is reachable from other machines. On your
+laptop, open `http://<server>:8470`, with the server's hostname or address. A patch has its own
+address, `http://<server>:8470/p/NAME`, and `/p/NAME/thread` and `/p/NAME/history` open the
+tabs. To keep it to the server itself, set `listen = "127.0.0.1:8470"`, and reach it with an SSH
+tunnel (`ssh -L 8470:localhost:8470 <server>`).
+
+### No login
+
+The page and the API have no login. Anyone who can reach the port can read your patches, mark
+them, close them and start fetches. Keep the service on a trusted network, or bind it to
+`127.0.0.1` and use an SSH tunnel. Do not put it on the internet.
+
+The API refuses requests that change something unless they are JSON (`Content-Type:
+application/json`), and refuses a browser request from another site. That keeps a web page
+elsewhere from driving your service, but it is not access control. The API never takes a git
+URL, and the only network fetch it can start is a lore fetch by Message-ID.
 
 ## Everyday use
 
@@ -212,9 +308,17 @@ addresses = ["you@example.org", "you@work.example.com"]
 # A local Linux clone to seed ~/.patchtrail/git/linux.git from (hardlinks).
 # seed = "~/src/linux"
 
-# For the background service (coming): where its web page listens, and hours between fetches.
+# For the service (`ptl serve`): where it listens, and hours between fetches.
 listen = "0.0.0.0:8470"
 interval_hours = 3
+
+# The service kills a fetch that runs longer than this many hours.
+fetch_timeout_hours = 4
+
+# A patch with no commit and no mail for this many days is "idle": the page folds it under
+# "+N idle", and fetches stop updating its maintainer tree. It stays tracked and listed, and
+# new mail or a commit brings it back.
+idle_days = 180
 
 # Other kernel remotes, if you don't want kernel.org's. Each key is optional.
 # [kernel]
@@ -241,13 +345,15 @@ bigger disk.
 
 ## Fetching on a schedule
 
-Until the service arrives, cron fetches every three hours, and keeps doing so after you log
-out:
+The service does this: it fetches every `interval_hours` (see
+[Running the service](#running-the-service)). If you don't run the service, cron can fetch every
+three hours, and keeps doing so after you log out:
 
     crontab -e
     0 */3 * * * $HOME/.local/bin/ptl fetch >> $HOME/.patchtrail/fetch.log 2>&1
 
-`ptl status` then shows what those fetches found, and `ptl watch` prints it live.
+`ptl status` then shows what those fetches found, and `ptl watch` prints it live. Only one fetch runs at a time, so a cron fetch and the
+service's never overlap; whichever comes second skips its turn.
 
 ## Registering patches from scripts and AI agents
 
@@ -256,7 +362,8 @@ links, and you don't wait for the next fetch to find it:
 
     ptl add <short-name> <Message-ID> [--link URL]... [--note TEXT] --json
 
-It is safe to repeat. The contract is in [docs/agents.md](docs/agents.md).
+It is safe to repeat. The contract is in [docs/agents.md](docs/agents.md), which also has the
+HTTP form, `POST /api/patches`, for an agent on another machine than the service.
 
 A Claude Code skill that does this after every send is in
 `contrib/claude-skill/patchtrail-register/`. To enable it:
@@ -286,6 +393,12 @@ running.
 ## Development
 
     make test        # uv run pytest -q
+    make test-web    # the page's tests (npm ci && npm test in web/)
+    make web         # build the page into src/patchtrail/web/dist/
+
+The page is in `web/` (React and TypeScript, built with Vite). The build lands in
+`src/patchtrail/web/dist/`, which git ignores and the wheel includes. Pushing a tag `v*` runs the
+CI release job, which builds the wheel with the page and attaches it to a GitHub release.
 
 The tests never touch the network or your `~/.patchtrail`.
 

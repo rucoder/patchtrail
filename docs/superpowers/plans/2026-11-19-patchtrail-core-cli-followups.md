@@ -5,33 +5,33 @@ Fix them before or during Plan 2.
 
 ## Found in the first real run on the build server
 
-1. **A rebased commit is fixed only on the second run.** The maintainer's "Applied" mail can name a
-   commit that was later rebased away. The replacement search runs only for commits already stored,
-   so one named in that run's mail is skipped. kbuild showed "not in the repository" after run 1, and
-   was corrected (and flagged) after run 2.
-   - Fix: also run the replacement search for non-manual mail commits that are missing.
-2. **The "not tagged for stable" hint is wrong.** `render.kernel_lines` prints it twice and says
-   "for the branches below" when no branches are shown.
-3. **A line is missing compared with stable-watch.** stable-watch printed "FAILED mails from
-   stable: none"; ptl prints nothing.
-4. **The wrong subject shows for a v2 sent inside the v1 thread.** vfio-igd shows the v1 subject,
-   because v2 was posted in the v1 thread.
-5. **Maintainer trees are fetched every run for patches never applied.** net, net-next and
-   linux-vfio (GitHub) are fetched every run for the 2024 net-stmmac and reenable-runtime-pm patches.
-   - Fix: skip long-idle patches. This is a policy choice; decide it with Plan 2.
+1. ~~**A rebased commit is fixed only on the second run.** The maintainer's "Applied" mail can name a~~ (fixed in Plan 2)
+   ~~commit that was later rebased away. The replacement search runs only for commits already stored,~~
+   ~~so one named in that run's mail is skipped. kbuild showed "not in the repository" after run 1, and~~
+   ~~was corrected (and flagged) after run 2.~~
+   - ~~Fix: also run the replacement search for non-manual mail commits that are missing.~~
+2. ~~**The "not tagged for stable" hint is wrong.** `render.kernel_lines` prints it twice and says~~ (fixed in Plan 2)
+   ~~"for the branches below" when no branches are shown.~~
+3. ~~**A line is missing compared with stable-watch.** stable-watch printed "FAILED mails from~~ (fixed in Plan 2)
+   ~~stable: none"; ptl prints nothing.~~
+4. ~~**The wrong subject shows for a v2 sent inside the v1 thread.** vfio-igd shows the v1 subject,~~ (fixed in Plan 2)
+   ~~because v2 was posted in the v1 thread.~~
+5. ~~**Maintainer trees are fetched every run for patches never applied.** net, net-next and~~ (fixed in Plan 2)
+   ~~linux-vfio (GitHub) are fetched every run for the 2024 net-stmmac and reenable-runtime-pm patches.~~
+   - ~~Fix: skip long-idle patches. This is a policy choice; decide it with Plan 2.~~
 
 ## Deferred from reviews: before Plan 2's service and HTTP API
 
-- `busy_timeout` on connections, since a service and the CLI will share the database.
-- Migration race between two processes: `BEGIN IMMEDIATE` and re-read `user_version` inside the
-  transaction. This must land before migration 003.
-- Timeout for the b4 subprocess, and wrap its `OSError` in `LoreError`.
-- Failure-handler ordering in `run_fetch`: finish the run row before logging.
-- The b4 guard in tests should fail the test, not only log.
+- ~~`busy_timeout` on connections, since a service and the CLI will share the database.~~ (fixed in Plan 2)
+- ~~Migration race between two processes: `BEGIN IMMEDIATE` and re-read `user_version` inside the~~ (fixed in Plan 2)
+  ~~transaction. This must land before migration 003.~~
+- ~~Timeout for the b4 subprocess, and wrap its `OSError` in `LoreError`.~~ (fixed in Plan 2)
+- ~~Failure-handler ordering in `run_fetch`: finish the run row before logging.~~ (fixed in Plan 2)
+- ~~The b4 guard in tests should fail the test, not only log.~~ (fixed in Plan 2)
 - A `ptl add` (lore-only) first snapshot uses up `read_on_first_snapshot`. An already-applied thread
   added this way flags once on the next full fetch.
-- `skip`/`unskip` show "skipped" only after the next fetch, because `reevaluate` reuses the previous
-  fragment. The page will want this immediately.
+- ~~`skip`/`unskip` show "skipped" only after the next fetch, because `reevaluate` reuses the previous~~ (fixed in Plan 2)
+  ~~fragment. The page will want this immediately.~~
 
 ## Deferred from reviews: smaller
 

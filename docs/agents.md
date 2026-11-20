@@ -29,3 +29,36 @@ Example:
 
 `stage` and `standing` are null until the first fetch has recorded a state; `project` becomes
 `kernel` and so on once the mail is fetched.
+
+## From another machine: `POST /api/patches`
+
+If patchtrail runs as a service (`ptl serve`) on another machine, register the patch over HTTP
+instead. The page's address is `http://<server>:8470`, or whatever `listen` says in the
+service's config:
+
+    curl -s -X POST http://<server>:8470/api/patches \
+      -H 'Content-Type: application/json' \
+      -d '{"name": "iowq-cpuset", "msgid": "20261112.abc@example.org",
+           "links": ["https://github.com/lf-edge/eve/pull/5123"], "note": "needs a v2"}'
+
+Body (JSON object):
+- `name` and `msgid`: required strings, as for `ptl add`. `msgid` may also be a lore URL.
+- `links`: optional list of `http(s)://` URLs. `note`: optional string.
+- `follow`: optional boolean, for someone else's thread you want to watch.
+
+The answer is the same object as `ptl add --json` prints:
+
+| Status | Meaning |
+|---|---|
+| 201 | The patch was created. |
+| 200 | The Message-ID was already registered: new links were added, `note` replaced the note, and the existing patch is reported under its first name. Safe to repeat. |
+| 409 | The name belongs to a different patch. Pick another name. |
+| 400 | Bad input: a malformed name, a Message-ID without `@`, a link that is not `http(s)://`, a body that is not a JSON object, or a field of the wrong type. The answer is `{"error": "..."}`. |
+
+Notes:
+- The request must have `Content-Type: application/json`, or the answer is 415.
+- It needs no `Origin` header. curl and scripts send none. A request that does carry one must
+  match the `Host` it was sent to, or the answer is 403; only browsers on other sites hit that.
+- The service starts a lore-only fetch for the new patch at once, so lore is read within
+  seconds; where the patch stands in git comes with the next scheduled fetch.
+- The service has no login: use it only on a trusted network.

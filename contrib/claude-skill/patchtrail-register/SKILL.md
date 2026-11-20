@@ -34,6 +34,11 @@ Registering a patch right after sending it:
 
 If `ptl` is not installed, tell the user and stop. Don't install it yourself.
 
+On a machine without `ptl`, when the user runs the patchtrail service elsewhere, the same
+registration is `POST http://<server>:8470/api/patches` with `Content-Type: application/json`
+and `{"name", "msgid", "links", "note"}`; see `docs/agents.md`. Ask the user for the server's
+address; don't guess it.
+
 ## Finding the Message-ID
 
 - `b4 send` prints it (the cover letter's or single patch's Message-ID) when it sends.

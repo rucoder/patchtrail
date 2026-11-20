@@ -38,7 +38,7 @@ def test_my_addresses_order(monkeypatch):
 
 def test_version(capsys):
     assert main(["--version"]) == 0
-    assert capsys.readouterr().out.strip() == "patchtrail 0.1.0"
+    assert capsys.readouterr().out.strip() == "patchtrail 0.2.0"
 
 
 def test_idle_and_timeout_from_file():

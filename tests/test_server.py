@@ -435,3 +435,21 @@ def test_serve_port_in_use(populated, capsys):
     finally:
         s.close()
     assert "is in use" in capsys.readouterr().err
+
+
+def test_wheel_contains_bundle(tmp_path):
+    import shutil
+    import subprocess
+    import zipfile
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    if not (root / "src/patchtrail/web/dist/index.html").is_file():
+        pytest.skip("web page not built (run `make web`)")
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not on PATH")
+    subprocess.run([uv, "build", "--wheel", "-o", str(tmp_path)], cwd=root, check=True,
+                   capture_output=True)
+    [wheel] = tmp_path.glob("patchtrail-*.whl")
+    assert "patchtrail/web/dist/index.html" in zipfile.ZipFile(wheel).namelist()
