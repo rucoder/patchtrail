@@ -130,4 +130,5 @@ def run_setup(*, seed: Path | None, no_seed: bool, do_import: bool | None) -> in
         conn.close()
     print("next: `ptl fetch` (the first run fetches mainline and stable; with a seed this takes "
           "minutes, without one several GB), then `ptl status`")
+    print("To fetch every 3 hours and serve the page: ptl service install")
     return 0

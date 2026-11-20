@@ -536,6 +536,10 @@ def cmd_setup(args, conn, cfg, mine) -> int:
     raise AssertionError("setup runs before the database is opened")
 
 
+def cmd_service(args, conn, cfg, mine) -> int:
+    raise AssertionError("service runs before the database is opened")
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="ptl")
     ap.add_argument("--version", action="store_true", help="print version and exit")
@@ -620,6 +624,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("commit", nargs="?", metavar="COMMIT")
     p = add("serve", cmd_serve, "run the web page, the API and the 3-hour fetch")
     p.add_argument("--listen", metavar="HOST:PORT", help="default: listen in the config")
+    p = add("service", cmd_service, "run patchtrail as a systemd user service")
+    p.add_argument("action", choices=["install", "uninstall", "status", "logs"])
+    p.add_argument("-f", "--follow", action="store_true", help="logs: keep following")
     p = add("fetch", cmd_fetch, "fetch lore and the git trees now")
     p.add_argument("names", nargs="*", metavar="NAME")
     # Used by the service, which runs its fetches as child processes.
@@ -661,6 +668,22 @@ def main(argv: list[str] | None = None) -> int:
 
         return run_setup(seed=args.seed, no_seed=args.no_seed, do_import=args.do_import)
     cfg = load_config(paths())
+    if args.cmd == "service":
+        from patchtrail import service
+
+        try:
+            if args.action == "install":
+                print("\n".join(service.install(cfg)))
+            elif args.action == "uninstall":
+                print("\n".join(service.uninstall()))
+            elif args.action == "status":
+                return service.status()
+            else:
+                return service.logs(args.follow)
+        except service.ServiceError as e:
+            print(f"ptl: {e}", file=sys.stderr)
+            return 1
+        return 0
     if args.cmd == "serve":
         from patchtrail.server import serve
 

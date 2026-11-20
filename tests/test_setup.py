@@ -170,3 +170,9 @@ def test_setup_without_git(tmp_path, monkeypatch, capsys):        # final review
     cap = capsys.readouterr()
     assert cap.err == "patchtrail needs git >= 2.40 (found none)\n" and "Traceback" not in cap.out
     assert not paths().home.exists()
+
+
+def test_setup_mentions_service(kfix, capsys):
+    assert run_setup(seed=None, no_seed=True, do_import=False) == 0
+    assert "To fetch every 3 hours and serve the page: ptl service install" in (
+        capsys.readouterr().out.splitlines()[-1])

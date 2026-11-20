@@ -305,3 +305,94 @@ def test_terminate_stops_child_and_marks_interrupted():
         r.terminate()                  # no child: a no-op
     finally:
         _cleanup(r)
+
+
+# ---- systemd user unit (Task 8) ----
+
+class FakeRun:
+    def __init__(self, linger="no", fail=()):
+        self.calls, self.linger, self.fail = [], linger, tuple(fail)
+
+    def __call__(self, argv, **kw):
+        self.calls.append(list(argv))
+        if argv[:2] == ["loginctl", "show-user"]:
+            return subprocess.CompletedProcess(argv, 0, f"Linger={self.linger}\n", "")
+        if any(argv[:2] == [f[0], f[1]] or argv[0] == f for f in self.fail):
+            return subprocess.CompletedProcess(argv, 1, "", "boom")
+        return subprocess.CompletedProcess(argv, 0, "", "")
+
+
+def _cfg(listen="0.0.0.0:8470"):
+    from patchtrail.config import Config
+    return Config(listen=listen)
+
+
+def test_unit_text_exec_and_home(monkeypatch):
+    monkeypatch.delenv("PATCHTRAIL_HOME", raising=False)
+    t = service.unit_text()
+    assert f"ExecStart={sys.executable} -m patchtrail serve\n" in t
+    assert "Restart=on-failure\nRestartSec=10\n" in t
+    assert "WantedBy=default.target" in t and "PATCHTRAIL_HOME" not in t
+    monkeypatch.setenv("PATCHTRAIL_HOME", "/srv/ptl")
+    assert "Environment=PATCHTRAIL_HOME=/srv/ptl\n" in service.unit_text()
+    assert service.unit_path().name == "patchtrail.service"
+    assert service.unit_path().parent.parts[-2:] == ("systemd", "user")
+
+
+def test_install_commands_in_order():
+    run = FakeRun(linger="no")
+    out = service.install(_cfg(), run)
+    assert service.unit_path().read_text() == service.unit_text()
+    user = os.environ.get("USER") or __import__("getpass").getuser()
+    assert run.calls == [
+        ["systemctl", "--user", "daemon-reload"],
+        ["systemctl", "--user", "enable", "--now", "patchtrail.service"],
+        ["loginctl", "show-user", user, "-p", "Linger"],
+        ["loginctl", "enable-linger", user],
+    ]
+    import socket
+    assert out[-1].endswith(f"http://{socket.gethostname()}:8470")
+
+
+def test_install_linger_already_on():
+    run = FakeRun(linger="yes")
+    out = service.install(_cfg("127.0.0.1:9000"), run)
+    assert not any(c[:2] == ["loginctl", "enable-linger"] for c in run.calls)
+    assert out[-1].endswith("http://127.0.0.1:9000")
+    assert not any("sudo" in line for line in out)
+
+
+def test_install_linger_needs_sudo_prints_hint():
+    run = FakeRun(linger="no", fail=[("loginctl", "enable-linger")])
+    out = service.install(_cfg(), run)
+    user = os.environ.get("USER") or __import__("getpass").getuser()
+    assert (f"run: sudo loginctl enable-linger {user}  "
+            "(so the service keeps running after you log out)") in out
+
+
+def test_install_surfaces_systemctl_failure():
+    run = FakeRun(fail=[("systemctl", "--user")])
+    with pytest.raises(service.ServiceError, match="boom"):
+        service.install(_cfg(), run)
+
+
+def test_uninstall():
+    service.install(_cfg(), FakeRun(linger="yes"))
+    run = FakeRun()
+    service.uninstall(run)
+    assert not service.unit_path().exists()
+    assert run.calls == [["systemctl", "--user", "disable", "--now", "patchtrail.service"],
+                         ["systemctl", "--user", "daemon-reload"]]
+    service.uninstall(FakeRun())          # not installed: still fine
+
+
+def test_status_and_logs_argv():
+    run = FakeRun()
+    service.status(run)
+    service.logs(False, run)
+    service.logs(True, run)
+    assert run.calls == [
+        ["systemctl", "--user", "status", "patchtrail.service", "--no-pager"],
+        ["journalctl", "--user", "-u", "patchtrail.service", "-e"],
+        ["journalctl", "--user", "-u", "patchtrail.service", "-e", "-f"],
+    ]

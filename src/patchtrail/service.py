@@ -4,13 +4,16 @@
 A fetch never runs in the server process: each one is a child
 `python -m patchtrail fetch --trigger ...`, tracked by PID, which takes the fetch
 lock itself. The child leads its own process group, so a timeout kills the whole group."""
+import getpass
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
 import time
 import traceback
+from pathlib import Path
 
 from patchtrail import db, fetch, views
 from patchtrail.config import Paths
@@ -149,3 +152,95 @@ class Scheduler:
             except Exception:
                 traceback.print_exc()
             stop.wait(every_s)
+
+
+# ---- the systemd user unit ----
+
+UNIT = "patchtrail.service"
+
+
+class ServiceError(Exception):
+    pass
+
+
+def unit_path() -> Path:
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "systemd" / "user" / UNIT
+
+
+def unit_text() -> str:
+    lines = [
+        "[Unit]",
+        "Description=patchtrail: follow your patches on the mailing lists",
+        "After=network-online.target",
+        "",
+        "[Service]",
+        f"ExecStart={sys.executable} -m patchtrail serve",
+        "Restart=on-failure",
+        "RestartSec=10",
+    ]
+    home = os.environ.get("PATCHTRAIL_HOME")
+    if home:
+        lines.append(f"Environment=PATCHTRAIL_HOME={home}")
+    lines += ["", "[Install]", "WantedBy=default.target", ""]
+    return "\n".join(lines)
+
+
+def _check(run, argv: list[str]) -> None:
+    try:
+        r = run(argv, capture_output=True, text=True)
+    except FileNotFoundError:
+        raise ServiceError(f"{argv[0]} not found; is systemd available?") from None
+    if r.returncode:
+        detail = (r.stderr or r.stdout or "").strip()
+        raise ServiceError(f"{' '.join(argv)} failed ({r.returncode}): {detail}")
+
+
+def _page_url(listen: str) -> str:
+    host, _, port = listen.rpartition(":")
+    host = host.strip("[]")
+    if host in ("0.0.0.0", "::", ""):
+        host = socket.gethostname()
+    elif ":" in host:
+        host = f"[{host}]"
+    return f"http://{host}:{port}"
+
+
+def install(cfg, run=subprocess.run) -> list[str]:
+    path = unit_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(unit_text())
+    out = [f"wrote {path}"]
+    _check(run, ["systemctl", "--user", "daemon-reload"])
+    _check(run, ["systemctl", "--user", "enable", "--now", UNIT])
+    out.append(f"enabled and started {UNIT}")
+    user = getpass.getuser()
+    r = run(["loginctl", "show-user", user, "-p", "Linger"], capture_output=True, text=True)
+    if r.returncode == 0 and r.stdout.strip() == "Linger=yes":
+        pass
+    else:
+        e = run(["loginctl", "enable-linger", user], capture_output=True, text=True)
+        if e.returncode:
+            out.append(f"run: sudo loginctl enable-linger {user}  "
+                       "(so the service keeps running after you log out)")
+        else:
+            out.append("enabled lingering: the service keeps running after you log out")
+    out.append(f"the page: {_page_url(cfg.listen)}")
+    return out
+
+
+def uninstall(run=subprocess.run) -> list[str]:
+    _check(run, ["systemctl", "--user", "disable", "--now", UNIT])
+    path = unit_path()
+    path.unlink(missing_ok=True)
+    _check(run, ["systemctl", "--user", "daemon-reload"])
+    return [f"stopped and removed {UNIT}"]
+
+
+def status(run=subprocess.run) -> int:
+    return run(["systemctl", "--user", "status", UNIT, "--no-pager"]).returncode
+
+
+def logs(follow: bool, run=subprocess.run) -> int:
+    argv = ["journalctl", "--user", "-u", UNIT, "-e"] + (["-f"] if follow else [])
+    return run(argv).returncode
