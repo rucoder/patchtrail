@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
+import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { act, getPatches, getStatus } from "./api";
 import { AppContext, type AppState } from "./app-context";
 import { Board } from "./components/Board";
+import { Panel } from "./components/Panel";
 import { TopBar } from "./components/TopBar";
 import { defaultFilters, visible, type Filters } from "./lib/filters";
+import { loadPanelHeight, savePanelHeight } from "./lib/panel";
 import { parseRoute, routePath, type Route } from "./lib/route";
 import type { Card, Status } from "./types";
 
@@ -17,6 +20,7 @@ export function App() {
   const [filters, setFilters] = useState<Filters>(defaultFilters);
   const [route, setRoute] = useState<Route>(() => parseRoute(location.pathname));
 
+  const [panelH, setPanelH] = useState(loadPanelHeight);
   const [clockOffset, setClockOffset] = useState(0); // server clock minus ours, seconds
   const [connError, setConnError] = useState<string | null>(null);
   const issued = useRef(0); // sequence of status requests and fresh statuses
@@ -97,7 +101,7 @@ export function App() {
 
   return (
     <AppContext.Provider value={state}>
-      <div className="pt">
+      <div className="pt" style={{ "--panel-h": route.name ? `${panelH + 6}px` : "0px" } as CSSProperties}>
         <TopBar
           status={status}
           patches={patches}
@@ -113,7 +117,7 @@ export function App() {
           }}
         />
         <Board cards={shown} />
-        {/* Tasks 11 and 12: the detail panel and the thread view go here. */}
+        <Panel height={panelH} onResize={setPanelH} onResizeEnd={(h) => { setPanelH(h); savePanelHeight(h); }} />
       </div>
     </AppContext.Provider>
   );

@@ -3,12 +3,12 @@ import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import * as api from "./api";
 import { App } from "./App";
-import { card, run, status } from "./fixtures";
+import { card, detail, run, status } from "./fixtures";
 import type { Status } from "./types";
 
 vi.mock("./api", async (orig) => ({
   ...(await orig<typeof import("./api")>()), getStatus: vi.fn(), getPatches: vi.fn(),
-  fetchNow: vi.fn(), getRunLog: vi.fn(), act: vi.fn(),
+  fetchNow: vi.fn(), getRunLog: vi.fn(), act: vi.fn(), getPatch: vi.fn(),
 }));
 const getStatus = vi.mocked(api.getStatus);
 const getPatches = vi.mocked(api.getPatches);
@@ -122,5 +122,21 @@ describe("App", () => {
     await act(async () => slow.resolve(status({ error: { run_id: 1, at: 1_700_000_000, error: "stale" } })));
     expect(screen.queryByText(/stale/)).toBeNull();
     expect(screen.getByText(/fresh/)).toBeTruthy();
+  });
+
+  it("opens the panel on a deep link and reloads the detail when the card changes", async () => {
+    history.replaceState(null, "", "/p/a/history");
+    const getPatch = vi.mocked(api.getPatch);
+    getPatch.mockReset();
+    getPatch.mockResolvedValue(detail("a"));
+    render(<App />);
+    await flush();
+    expect(getPatch).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("History").className).toContain("on");
+    await advance(30_000); // same card JSON: no reload
+    expect(getPatch).toHaveBeenCalledTimes(1);
+    getPatches.mockResolvedValue({ patches: [card("a", { unread: true, unread_changes: 2 })] });
+    await advance(30_000);
+    expect(getPatch).toHaveBeenCalledTimes(2);
   });
 });

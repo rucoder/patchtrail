@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Builders for tests.
-import type { Card, Run, Status } from "./types";
+import type { Card, Detail, Run, Status } from "./types";
 
 export function run(over: Partial<Run> = {}): Run {
   return {
@@ -23,5 +23,12 @@ export function card(name: string, over: Partial<Card> = {}): Card {
     standing: { kind: "none", who: "", since: 0, text: "" }, your_turn: false, unread: false,
     unread_changes: 0, links: [], note: null, pills: [], finished: false, finished_at: null,
     idle: false, last_activity: 0, version: 1, fetched: true, ...over,
+  };
+}
+
+export function detail(name: string, over: Partial<Detail> = {}): Detail {
+  return {
+    ...card(name), lore_url: null, revisions: [], steps: [], since: { at: null, changes: [] },
+    commits: [], branches: [], failed: [], hint: null, history: [], thread: [], ...over,
   };
 }
