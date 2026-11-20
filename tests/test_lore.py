@@ -6,7 +6,8 @@ from pathlib import Path
 import pytest
 from conftest import raising
 
-from patchtrail.sources.lore import LORE, LoreError, LoreSource, fetch_thread, parse_msgid, search
+from patchtrail.sources.lore import (LORE, LoreError, LoreSource, fetch_thread, parse_msgid,
+                                     search, valid_msgid)
 
 DATA = Path(__file__).parent / "data"
 
@@ -109,6 +110,27 @@ def test_fetch_thread_error(tmp_path, monkeypatch):
     monkeypatch.setenv("PATCHTRAIL_B4", str(fake))
     with pytest.raises(LoreError, match="boom: no such thread"):
         fetch_thread("a@b")
+
+
+# --- plan 2 final review C1: nothing b4 would read as a URL --------------------
+
+EVIL_URL = "https://lore.kernel.org/all/http:%2F%2F127.0.0.1:8443%2Fl%2Fa@b"
+
+
+def test_valid_msgid_refuses_what_b4_reads_as_a_url():
+    assert parse_msgid(EVIL_URL) == "http://127.0.0.1:8443/l/a@b"
+    for bad in ("http://127.0.0.1:8443/l/a@b", "HTTPS://evil.example/l/a@b",
+                "https://evil.example/project/x/patch/a@b", "<https://evil.example/l/a@b",
+                "id:https://evil.example/l/a@b", "http:a@b", "ftp://evil.example/a@b"):
+        assert not valid_msgid(bad), bad
+    for good in ("20261111162705.1150983-1-me@x", "a/b+c=d@example.org",
+                 "CAH2r5mt=x/y_z@mail.example.org", "abc@[IPv6:::1]"):
+        assert valid_msgid(good), good
+
+
+def test_fetch_thread_refuses_a_url_msgid():
+    with pytest.raises(LoreError, match="not a Message-ID"):
+        fetch_thread("http://127.0.0.1:8443/l/a@b")       # the b4 guard fails if b4 ran
 
 
 # --- lore as it really answers (final review C1, I4) ---------------------------

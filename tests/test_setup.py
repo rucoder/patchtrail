@@ -34,6 +34,7 @@ def test_default_config_loads_back():
     assert cfg.seed is None
     text = p.config.read_text()
     assert "# seed" in text and "# [kernel]" in text
+    assert "\n# hosts = [" in text and cfg.hosts == []
     assert write_default_config(p, ["x@y.org"]) is False
 
 

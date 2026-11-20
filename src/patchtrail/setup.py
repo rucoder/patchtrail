@@ -46,6 +46,10 @@ addresses = [{addrs}]
 # Where `ptl serve` listens.
 listen = "0.0.0.0:8470"
 
+# The API answers requests for an IP address, localhost and this machine's own host
+# names. Other names you open the page by (a DNS alias, say) go here.
+# hosts = ["patchtrail.example.org"]
+
 # Hours between scheduled fetches.
 interval_hours = 3
 

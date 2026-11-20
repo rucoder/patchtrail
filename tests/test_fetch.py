@@ -823,3 +823,13 @@ def test_failed_run_finished_even_if_log_fails(conn, cfgp, monkeypatch):
         run_fetch(*cfgp, "cli", source=FakeSource(), trails={}, search=nosearch, now=lambda: 3)
     r = last_run(conn)
     assert (r["status"], r["finished_at"]) == ("failed", 3) and "boom" in r["error"]
+
+
+# --- plan 2 final review C1: a stored msgid b4 would read as a URL ---------------
+
+def test_a_stored_url_msgid_is_never_given_to_b4(conn, cfgp):
+    pid = store.add_patch(conn, "evil", now=1)
+    store.add_revision(conn, pid, "http://127.0.0.1:8443/l/a@b")   # stored by an older version
+    rid = run_fetch(*cfgp, "cli", trails={}, search=nosearch, patch_names=["evil"],
+                    discover_new=False)                            # the real LoreSource
+    assert any("not a Message-ID" in l for l in log_lines(conn, rid))

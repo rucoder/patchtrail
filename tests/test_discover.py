@@ -96,6 +96,18 @@ def test_backport_matches_by_subject_and_skips_unknown(conn):
     assert store.revision_by_msgid(conn, "zz@x") is None
 
 
+def test_url_msgids_are_not_discovered(conn):                    # plan 2 final review C1
+    pid = store.add_patch(conn, "fix-io", now=1)
+    store.add_revision(conn, pid, "a@x", subject="[PATCH] fix io", author="me@example.org")
+    store.set_commit(conn, pid, "f" * 40, "fix io", "manual")
+    evil = "http://127.0.0.1:8443/l/a@b"
+    stable = [E("http://127.0.0.1:8443/l/s@b", "[PATCH 6.1.y] fix io",
+                summary="commit ffffffffffff upstream.\n")]
+    r = discover(conn, FakeSource([E(evil, "[PATCH] evil one"), E(evil + "2", "[PATCH v2] fix io")]),
+                 ME, now=2, search=lambda *a, **k: stable)
+    assert (r.new_patches, r.new_revisions, r.backports) == ([], [], [])
+    assert [tuple(r) for r in conn.execute("SELECT root_msgid FROM revisions")] == [("a@x",)]
+
 def test_version_and_backport_parsing():
     assert version_of("[RFC PATCH v3 2/5] x") == 3 and version_of("[PATCH] x") == 1
     assert backport_of("[PATCH 6.6] x", "[ Upstream commit 0659e44ce739ecd8 ]") == ("6.6", "0659e44ce739ecd8")

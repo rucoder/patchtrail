@@ -215,6 +215,13 @@ def test_add_invalid_name(populated, capsys):
     assert "ptl: invalid name: bad name" in capsys.readouterr().err
 
 
+def test_add_refuses_a_msgid_b4_reads_as_a_url(populated, conn, monkeypatch, capsys):  # C1
+    monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: pytest.fail("fetched"))
+    url = "https://lore.kernel.org/all/http:%2F%2F127.0.0.1:8443%2Fl%2Fa@b"
+    assert main(["add", "evil", url]) == 1
+    assert "ptl: not a Message-ID" in capsys.readouterr().err
+    assert store.get_patch(conn, "evil") is None
+
 def test_add_clears_ignored(populated, conn, monkeypatch):
     monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
     conn.execute("INSERT INTO ignored VALUES ('back@x')"); conn.commit()

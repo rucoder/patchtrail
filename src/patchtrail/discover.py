@@ -113,7 +113,8 @@ def discover(conn, source, addresses: list[str], *, now: int,
     taken = {r["name"] for r in conn.execute("SELECT name FROM patches")}
 
     for e in source.discover(addresses, since):
-        if e.is_reply or _known(conn, e.msgid):
+        # A crafted Message-ID could make b4 fetch from another host: never store one.
+        if e.is_reply or not lore.valid_msgid(e.msgid) or _known(conn, e.msgid):
             continue
         if backport_of(e.subject, e.summary)[0] is not None:
             continue  # a stable backport: handled by the stable-list stage
@@ -137,7 +138,8 @@ def discover(conn, source, addresses: list[str], *, now: int,
     # reply in a thread (a patch Cc'd to stable, a backport's thread) is not.
     for addr in addresses:
         for e in search("stable", f"f:{addr}"):
-            if _known(conn, e.msgid) or e.subject.lower().startswith("re:"):
+            if (not lore.valid_msgid(e.msgid) or _known(conn, e.msgid)
+                    or e.subject.lower().startswith("re:")):
                 continue
             series, sha = backport_of(e.subject, e.summary)
             if series is None:

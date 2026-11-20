@@ -47,3 +47,11 @@ def test_idle_and_timeout_from_file():
     p.config.write_text("idle_days = 30\nfetch_timeout_hours = 1.5\n")
     cfg = load_config(p)
     assert cfg.idle_days == 30 and cfg.fetch_timeout_hours == 1.5
+
+
+def test_hosts_from_file():                                      # plan 2 final review I6
+    p = paths()
+    p.home.mkdir(parents=True, exist_ok=True)
+    assert load_config(p).hosts == []
+    p.config.write_text('hosts = ["ptl.example.org"]\n')
+    assert load_config(p).hosts == ["ptl.example.org"]

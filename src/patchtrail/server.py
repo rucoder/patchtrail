@@ -1,10 +1,14 @@
 # SPDX-License-Identifier: Apache-2.0
 """`ptl serve`: the JSON API and the built page, in one stdlib HTTP server.
 
-Every route opens its own database connection. Requests that change state must be
-same-origin (when they carry an Origin) and JSON, so a web page on another site cannot drive
-them. No route takes a git URL or sets a tree; those stay CLI-only."""
+Every route opens its own database connection. Every /api request must name a known
+Host (an IP address, localhost, this machine's names or config `hosts`), so a DNS-rebinding
+page cannot reach it. Requests that change state must be same-origin (when they carry an
+Origin) and JSON, so a web page on another site cannot drive them. No route takes a git URL
+or sets a tree; those stay CLI-only."""
 import errno
+import functools
+import ipaddress
 import json
 import mimetypes
 import re
@@ -20,7 +24,7 @@ from importlib import resources
 from pathlib import Path
 from urllib.parse import parse_qsl, unquote, urlsplit
 
-from patchtrail import __version__, actions, db, fetch, store, views
+from patchtrail import __version__, actions, db, fetch, views
 from patchtrail.actions import ActionError
 from patchtrail.config import Config, Paths, my_addresses
 from patchtrail.service import Runner, Scheduler
@@ -31,6 +35,26 @@ NO_BUNDLE = (b"<!doctype html><html><body><p>patchtrail's web page was not built
              b"<a href=\"/api/status\">/api/status</a></p></body></html>")
 MAX_BODY = 1 << 20
 _NUM = re.compile(r"[0-9]{1,18}")
+_HOST = re.compile(r"(\[[^\]]*\]|[^:\[\]]*)(?::[0-9]*)?")
+
+
+def host_name(host: str) -> str:
+    """The name or address of a Host header, without its port, lowercased and without a
+    trailing dot; "" when the header is malformed."""
+    m = _HOST.fullmatch(host.strip())
+    return m.group(1).lower().rstrip(".") if m else ""
+
+
+def is_ip_literal(name: str) -> bool:
+    """An IPv4 address, or a bracketed IPv6 one: a name DNS rebinding cannot use."""
+    try:
+        if name.startswith("[") and name.endswith("]"):
+            ipaddress.IPv6Address(name[1:-1])
+        else:
+            ipaddress.IPv4Address(name)
+    except ValueError:
+        return False
+    return True
 
 
 @dataclass
@@ -104,7 +128,24 @@ class App:
         except _BadRequest as e:
             return _error(400, str(e))
 
+    @functools.cached_property
+    def _own_names(self) -> frozenset[str]:
+        """localhost, this machine's names and the configured hosts (looked up once)."""
+        names = {"localhost", socket.gethostname(), socket.getfqdn(), *self.cfg.hosts}
+        return frozenset(n for n in map(host_name, names) if n)
+
+    def _unknown_host(self, req: Request) -> Response | None:
+        name = host_name(req.headers.get("host", ""))
+        if not name:
+            return _error(403, "missing or malformed Host header")
+        if is_ip_literal(name) or name in self._own_names:
+            return None
+        return _error(403, f"unknown Host {name}; add it to hosts in config.toml")
+
     def _api(self, req: Request) -> Response:
+        refused = self._unknown_host(req)
+        if refused:
+            return refused
         if req.method not in ("GET", "HEAD"):
             refused = self._csrf(req)
             if refused:
@@ -299,6 +340,7 @@ class _Server6(ThreadingHTTPServer):
 def _handler(app: App):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
+        timeout = 120           # an idle or half-open keep-alive connection frees its thread
 
         def _serve(self):
             url = urlsplit(self.path)

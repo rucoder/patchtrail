@@ -44,9 +44,18 @@ def parse_msgid(arg: str) -> str:
     return arg.strip().removeprefix("<").removesuffix(">")
 
 
+# b4 reads an argument matching https?:// (after stripping <>) as a URL and fetches from
+# its host. lore is the only place patchtrail fetches mail from (spec §4), so no
+# Message-ID may look like that. A real one may hold "/" but never "://".
+_URLISH = re.compile(r"[<>]*https?:", re.I)
+
+
 def valid_msgid(msgid: str) -> bool:
-    """Shaped like a Message-ID: has an @, no whitespace, and cannot pass for an option."""
-    return "@" in msgid and not msgid.startswith("-") and not any(c.isspace() for c in msgid)
+    """Shaped like a Message-ID: has an @, no whitespace, cannot pass for an option, and
+    nothing b4 would read as a URL to fetch from."""
+    return ("@" in msgid and not msgid.startswith("-")
+            and not any(c.isspace() for c in msgid)
+            and "://" not in msgid and _URLISH.match(msgid) is None)
 
 
 def b4_path() -> str:

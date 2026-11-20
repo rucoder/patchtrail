@@ -157,6 +157,16 @@ def test_register_201_200_409_400(app):
         assert call(app, "POST", "/api/patches", body)[0].status == 400, body
 
 
+def test_register_refuses_a_msgid_b4_reads_as_a_url(app, runner, conn):  # final review C1
+    revs = conn.execute("SELECT COUNT(*) FROM revisions").fetchone()[0]
+    for msgid in ("https://lore.kernel.org/all/http:%2F%2F127.0.0.1:8443%2Fl%2Fa@b",
+                  "<http://127.0.0.1:8443/l/a@b>"):
+        r, j = call(app, "POST", "/api/patches", {"name": "evil", "msgid": msgid})
+        assert r.status == 400 and "not a Message-ID" in j["error"], msgid
+    assert conn.execute("SELECT COUNT(*) FROM revisions").fetchone()[0] == revs
+    assert conn.execute("SELECT 1 FROM patches WHERE name='evil'").fetchone() is None
+    assert runner.calls == []
+
 def test_register_starts_lore_only_fetch(app, runner):
     call(app, "POST", "/api/patches", {"name": "newp", "msgid": "new1@x"})
     assert runner.calls == [("api", ["newp"], True)]
@@ -191,6 +201,55 @@ def test_cross_origin_refused(app, conn):
     r, _ = call(app, "POST", "/api/patches/erofs/hide", headers={"origin": "http://10.0.0.1:8470"})
     assert r.status == 200
 
+
+# --- plan 2 final review I6: DNS rebinding -------------------------------------
+
+def test_dns_rebinding_host_refused(app, conn):
+    h = {"host": "rebind.example:8470", "origin": "http://rebind.example:8470"}
+    r, j = call(app, "POST", "/api/patches/erofs/hide", headers=h)
+    assert r.status == 403
+    assert j["error"] == "unknown Host rebind.example; add it to hosts in config.toml"
+    r, _ = call(app, "POST", "/api/patches", {"name": "x", "msgid": "a@b"}, headers=h)
+    assert r.status == 403 and app.runner.calls == []
+    for path in ("/api/status", "/api/patches", "/api/patches/erofs/mails"):
+        assert call(app, "GET", path, headers=h)[0].status == 403, path
+    assert conn.execute("SELECT hidden FROM patches WHERE name='erofs'").fetchone()[0] == 0
+    assert conn.execute("SELECT 1 FROM patches WHERE name='x'").fetchone() is None
+    assert call(app, "GET", "/", headers=h)[0].status == 200          # the page itself is static
+
+
+def test_ip_literal_hosts_pass(app):
+    for host in ("10.0.0.1:8470", "127.0.0.1", "[::1]:8470", "[fe80::1]", "192.0.2.7:1"):
+        assert call(app, "GET", "/api/status", headers={"host": host})[0].status == 200, host
+        r, _ = call(app, "POST", "/api/patches/erofs/read",
+                    headers={"host": host, "origin": "http://" + host})
+        assert r.status == 200, host
+    for host in ("10.0.0.1.rebind.example:8470", "[not-an-ip]:8470", "::1", ""):
+        assert call(app, "GET", "/api/status", headers={"host": host})[0].status == 403, host
+
+
+def test_own_host_names_pass(populated, runner, static, monkeypatch):
+    import socket
+    monkeypatch.setattr(socket, "gethostname", lambda: "BuildBox")
+    monkeypatch.setattr(socket, "getfqdn", lambda *a: "buildbox.lan.example.org")
+    app = server.App(paths(), Config(), runner, None, static_dir=static)
+    for host in ("localhost:8470", "LOCALHOST", "buildbox:8470", "BUILDBOX",
+                 "buildbox.lan.example.org:8470", "buildbox.lan.example.org."):
+        assert call(app, "GET", "/api/status", headers={"host": host})[0].status == 200, host
+    for host in ("buildbox.rebind.example", "localhost.rebind.example:8470"):
+        assert call(app, "GET", "/api/status", headers={"host": host})[0].status == 403, host
+
+
+def test_configured_hosts_pass(populated, runner, static):
+    app = server.App(paths(), Config(hosts=["ptl.example.org", "Alias.Example.org:8470"]), runner,
+                     None, static_dir=static)
+    for host in ("ptl.example.org:8470", "PTL.example.org", "alias.example.org:9"):
+        assert call(app, "GET", "/api/status", headers={"host": host})[0].status == 200, host
+    assert call(app, "GET", "/api/status", headers={"host": "other.example.org"})[0].status == 403
+
+
+def test_handler_times_out_idle_connections():                  # final review M2
+    assert server._handler(None).timeout == 120
 
 def test_form_post_refused(app):
     r, _ = call(app, "POST", "/api/patches/erofs/hide", headers={"content-type": "text/plain"})
