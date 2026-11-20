@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 """Command line entry point."""
 import argparse
+import contextlib
 import functools
 import json
 import os
@@ -10,7 +11,7 @@ import time
 from importlib import resources
 from pathlib import Path
 
-from patchtrail import __version__, db, render, snapshot, store
+from patchtrail import __version__, actions, db, render, snapshot, store
 from patchtrail.config import load_config, my_addresses, paths
 from patchtrail.fetch import Busy, locked, reevaluate, run_fetch
 from patchtrail.importer import import_old
@@ -150,35 +151,28 @@ def cmd_open(args, conn, cfg, mine) -> int:
 
 # --- changing commands ---------------------------------------------------------
 
+@contextlib.contextmanager
+def _refused():
+    """Report a refused action as a CLI error with the same message."""
+    try:
+        yield
+    except actions.ActionError as e:
+        raise CliError(str(e)) from e
+
+
+def _commit(arg: str) -> str:
+    with _refused():
+        return actions.parse_commit(arg)
+
+
 def _one(conn, name: str):
-    return _patches(conn, [name])[0]
-
-
-def _commit_arg(arg: str) -> str:
-    """A commit hash as given on the command line: 7 to 40 hex digits, never a ref
-    or anything git could read as an option."""
-    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", arg):
-        raise CliError(f"not a commit hash: {arg}")
-    return arg.lower()
-
-
-def _urls(urls: list[str]) -> list[str]:
-    for url in urls:
-        if not store.valid_url(url):
-            raise CliError(f"not an http(s) URL: {url}")
-    return urls
+    with _refused():
+        return actions.patch(conn, name)
 
 
 def _reeval(conn, cfg, *rows) -> None:
     for row in rows:
         reevaluate(conn, paths(), cfg, row["id"])
-
-
-def _series(arg: str) -> str:
-    m = re.fullmatch(r"(?:linux-)?(\d+\.\d+)(?:\.y)?", arg)
-    if not m:
-        raise CliError(f"bad series: {arg}")
-    return m.group(1)
 
 
 def _atomic(cmd):
@@ -199,16 +193,14 @@ def cmd_read(args, conn, cfg, mine) -> int:
     else:
         raise CliError("name a patch or pass --all")
     for r in rows:
-        snapshot.mark_read(conn, r["id"])
-    store.commit(conn)
+        actions.mark_read(conn, r)
     return 0
 
 
 @_atomic
 def cmd_unread(args, conn, cfg, mine) -> int:
     for r in _patches(conn, args.names):
-        snapshot.mark_unread(conn, r["id"])
-    store.commit(conn)
+        actions.mark_unread(conn, r)
     return 0
 
 
@@ -273,43 +265,18 @@ def cmd_watch(args, conn, cfg, mine) -> int:
 
 
 def _add_report(conn, row, msgid: str, mine, as_json: bool) -> None:
-    latest = snapshot.latest(conn, row["id"])
     if as_json:
-        print(json.dumps({
-            "name": row["name"], "msgid": msgid, "project": row["project"],
-            "stage": latest[2]["stage"] if latest else None,
-            "standing": latest[2]["standing"]["text"] if latest else None,
-            "links": store.links(conn, row["id"]), "note": row["note"],
-            "url": f"{render.LORE}/{msgid}/"}))
+        print(json.dumps(actions.add_json(conn, row, msgid)))
     else:
         _print(render.summary_lines(conn, row, mine=mine,
                                     state=render.current_state(conn, row, mine)))
 
 
 def cmd_add(args, conn, cfg, mine) -> int:
-    if not store.valid_name(args.name):
-        raise CliError(f"invalid name: {args.name}")
+    with _refused():
+        row, _ = actions.register(conn, name=args.name, msgid=args.msgid, follow=args.follow,
+                                  note=args.note, links=args.link, now=int(time.time()))
     msgid = lore.parse_msgid(args.msgid)
-    if not lore.valid_msgid(msgid):
-        raise CliError(f"not a Message-ID: {args.msgid}")
-    _urls(args.link)
-    now = int(time.time())
-    with store.atomic(conn):
-        rev = store.revision_by_msgid(conn, msgid)
-        if rev is not None:                 # registered before: the first name stays
-            row = store.patch_by_id(conn, rev["patch_id"])
-        else:
-            if store.get_patch(conn, args.name) is not None:
-                raise CliError(f"name taken: {args.name}")
-            row = store.patch_by_id(conn, store.add_patch(
-                conn, args.name, relation="following" if args.follow else "mine", now=now))
-            if not args.follow:
-                store.set_field(conn, row["id"], "read_on_first_snapshot", 1)
-            store.add_revision(conn, row["id"], msgid, subject="")
-            conn.execute("DELETE FROM ignored WHERE msgid=?", (msgid,))
-        store.add_links(conn, row["id"], args.link, now)
-        if args.note is not None:
-            store.set_field(conn, row["id"], "note", args.note or None)
     try:
         # Lore only: an agent waits seconds, not for the kernel trail's fetches.
         # The next full fetch follows the patch past the list.
@@ -329,20 +296,19 @@ def cmd_add(args, conn, cfg, mine) -> int:
 
 
 def cmd_link(args, conn, cfg, mine) -> int:
-    with store.atomic(conn):
-        store.add_links(conn, _one(conn, args.name)["id"], _urls(args.urls), int(time.time()))
+    row = _one(conn, args.name)
+    with _refused():
+        actions.add_links(conn, row, args.urls, int(time.time()))
     return 0
 
 
 def cmd_unlink(args, conn, cfg, mine) -> int:
-    with store.atomic(conn):
-        store.remove_links(conn, _one(conn, args.name)["id"], args.urls)
+    actions.remove_links(conn, _one(conn, args.name), args.urls)
     return 0
 
 
 def cmd_note(args, conn, cfg, mine) -> int:
-    with store.atomic(conn):
-        store.set_field(conn, _one(conn, args.name)["id"], "note", args.text or None)
+    actions.set_note(conn, _one(conn, args.name), args.text)
     return 0
 
 
@@ -351,7 +317,7 @@ def cmd_follow(args, conn, cfg, mine) -> int:
     rest = args.rest
     if len(rest) > 3:
         raise CliError("usage: follow NAME [COMMIT] [TREE-URL BRANCH] [--stable]")
-    commit = _commit_arg(rest[0]) if len(rest) in (1, 3) else None
+    commit = _commit(rest[0]) if len(rest) in (1, 3) else None
     tree = tuple(rest[-2:]) if len(rest) >= 2 else None
     row = store.get_patch(conn, args.name)
     if row is None:
@@ -379,17 +345,16 @@ def cmd_follow(args, conn, cfg, mine) -> int:
 
 @_atomic
 def cmd_hide(args, conn, cfg, mine) -> int:
-    rows = _patches(conn, args.names)
-    for r in rows:
-        store.set_field(conn, r["id"], "hidden", 1)
-    _reeval(conn, cfg, *rows)
+    for r in _patches(conn, args.names):
+        with _refused():
+            actions.hide(conn, paths(), cfg, r)
     return 0
 
 
 @_atomic
 def cmd_unhide(args, conn, cfg, mine) -> int:
     for r in _patches(conn, args.names):
-        store.set_field(conn, r["id"], "hidden", 0)
+        actions.unhide(conn, r)
     return 0
 
 
@@ -471,40 +436,29 @@ def cmd_split(args, conn, cfg, mine) -> int:
 
 @_atomic
 def cmd_close(args, conn, cfg, mine) -> int:
-    row = _one(conn, args.name)
-    store.set_field(conn, row["id"], "closed", args.reason)
-    store.set_field(conn, row["id"], "closed_note", args.note)
-    _reeval(conn, cfg, row)
+    with _refused():
+        actions.close(conn, paths(), cfg, _one(conn, args.name), args.reason, args.note)
     return 0
 
 
 @_atomic
 def cmd_skip(args, conn, cfg, mine) -> int:
-    row, series = _one(conn, args.name), _series(args.series)
-    conn.execute("INSERT OR IGNORE INTO branch_skips (patch_id, series) VALUES (?,?)",
-                 (row["id"], series))
-    store.commit(conn)
-    _reeval(conn, cfg, row)
+    with _refused():
+        actions.skip(conn, paths(), cfg, _one(conn, args.name), args.series)
     return 0
 
 
 @_atomic
 def cmd_unskip(args, conn, cfg, mine) -> int:
-    row, series = _one(conn, args.name), _series(args.series)
-    conn.execute("DELETE FROM branch_skips WHERE patch_id=? AND series=?", (row["id"], series))
-    store.commit(conn)
-    _reeval(conn, cfg, row)
+    with _refused():
+        actions.unskip(conn, paths(), cfg, _one(conn, args.name), args.series)
     return 0
 
 
 @_atomic
 def cmd_mark_applied(args, conn, cfg, mine) -> int:
-    row = _one(conn, args.name)
-    commit = _commit_arg(args.commit) if args.commit else None
-    store.set_field(conn, row["id"], "manual_applied", 1)
-    if commit:
-        store.set_commit(conn, row["id"], commit, "", "manual")
-    _reeval(conn, cfg, row)
+    with _refused():
+        actions.mark_applied(conn, paths(), cfg, _one(conn, args.name), args.commit)
     return 0
 
 
@@ -520,7 +474,7 @@ class _StderrProgress:
 
 
 def cmd_check(args, conn, cfg, mine) -> int:
-    args.commits = [_commit_arg(c) for c in args.commits]
+    args.commits = [_commit(c) for c in args.commits]
     progress = _StderrProgress()
     try:
         with locked(paths(), conn):
@@ -553,7 +507,8 @@ def cmd_backport(args, conn, cfg, mine) -> int:
         sha, name = args.target, args.target[:12]
     else:
         raise CliError(f"not tracked: {args.target}")
-    series = _series(args.series)
+    with _refused():
+        series = actions.parse_series(args.series)
     dest = Path(args.dir or f"{name}-{series}")
     try:
         lines = make_backport(KernelRepo(paths().linux), StableQueue(paths().queue),

@@ -445,7 +445,7 @@ def test_add_is_one_transaction(populated, conn, monkeypatch, capsys):
 def test_close_is_one_transaction(populated, conn, monkeypatch):
     def boom(*a, **k):
         raise RuntimeError("boom")
-    monkeypatch.setattr("patchtrail.cli.reevaluate", boom)
+    monkeypatch.setattr("patchtrail.actions.reevaluate", boom)
     with pytest.raises(RuntimeError):
         main(["close", "erofs", "dropped", "--note", "n"])
     p = store.get_patch(conn, "erofs")
