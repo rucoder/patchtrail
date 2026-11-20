@@ -181,7 +181,7 @@ def test_add_unarchived_shows_not_fetched_yet(populated, monkeypatch, capsys):
 
 def test_add_for_agents_json_idempotent_links(populated, conn, monkeypatch, capsys):
     monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
-    pr, jira = "https://github.com/lf-edge/eve/pull/5123", "https://zededa.atlassian.net/browse/ZED-42"
+    pr, jira = "https://github.com/lf-edge/eve/pull/5123", "https://example.atlassian.net/browse/ZED-42"
     assert main(["add", "iowq-fix", "<new@x>", "--link", pr, "--note", "found by agent", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert (out["name"], out["msgid"], out["links"], out["note"], out["stage"]) == (
@@ -405,7 +405,7 @@ def test_add_folded_into_older_patch_by_change_id(populated, conn, monkeypatch, 
         conn.commit()
         return 1
     monkeypatch.setattr("patchtrail.cli.run_fetch", fetch)
-    zed = "https://zededa.atlassian.net/browse/ZED-42"
+    zed = "https://example.atlassian.net/browse/ZED-42"
     assert main(["add", "erofs-v2", "v2@x", "--link", zed, "--note", "agent note", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert (out["name"], out["msgid"], out["links"], out["note"]) == (

@@ -1675,7 +1675,7 @@ def test_add_follow(populated, conn, monkeypatch):
 
 def test_add_for_agents_json_idempotent_links(populated, conn, monkeypatch, capsys):
     monkeypatch.setattr("patchtrail.cli.run_fetch", lambda *a, **k: 1)
-    pr, jira = "https://github.com/lf-edge/eve/pull/5123", "https://zededa.atlassian.net/browse/ZED-42"
+    pr, jira = "https://github.com/lf-edge/eve/pull/5123", "https://example.atlassian.net/browse/ZED-42"
     assert main(["add", "iowq-fix", "<new@x>", "--link", pr, "--note", "found by agent", "--json"]) == 0
     out = json.loads(capsys.readouterr().out)
     assert (out["name"], out["msgid"], out["links"], out["note"], out["stage"]) == (
@@ -1777,7 +1777,7 @@ def test_setup_twice_keeps_config(kfix):
 - [ ] **Step 5: Commit** with `git commit -s -m "patchtrail: setup, seeding and README"`.
 - [ ] **Step 6: Install and run it on this machine.** This is the switch-over check; the old scripts
   stay untouched. Run each step in order and confirm its expected result:
-  1. `make install && command -v ptl`: prints `/home/mikem/.local/bin/ptl`.
+  1. `make install && command -v ptl`: prints `~/.local/bin/ptl`.
   2. `ptl setup`:
      - it seeds from `~/.local/state/stable-watch/linux.git` in under 2 minutes and imports 11
        threads into 10 patches (kvm-bar-efault v1 and v2 merged);
