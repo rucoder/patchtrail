@@ -12,7 +12,7 @@ from patchtrail.projects.kernel.repo import slug
 from patchtrail.projects.kernel.follow import (commits_from_mail, maintainer_trees, matches,
                                                strip_subject)
 from patchtrail.sources.lore import LoreError
-from conftest import NullProgress, fake_search_from, raising, root, ty
+from conftest import NullProgress, epoch, fake_search_from, raising, root, ty
 
 
 @pytest.fixture
@@ -219,3 +219,84 @@ def test_rebased_commit_found_on_first_run(trail, view, kfix):
     assert res.commits_found == [(kfix.sha["F"], "fix io", "search")]
     assert res.replaced == {}
     assert [(c["sha"], c["where"]) for c in res.fragment["commits"]] == [(kfix.sha["F"], "mainline")]
+
+
+# --- idle patches ---------------------------------------------------------------
+
+NOW = epoch("2026-11-20")
+
+
+def _idle_trail(kfix, **cfg_kw):
+    cfg = load_config(paths())
+    cfg.kernel = kfix.urls
+    for k, v in cfg_kw.items():
+        setattr(cfg, k, v)
+    return KernelTrail(paths(), cfg, search=lambda *a, **k: [], now=lambda: NOW)
+
+
+def _aged(day, subject="fix more io"):
+    return replace(root(subject), date=epoch(day))
+
+
+class LogProgress(NullProgress):
+    def __init__(self):
+        self.lines = []
+
+    def log(self, line):
+        self.lines.append(line)
+
+
+def _trees_fetched(trail):
+    return trail.repo.run("for-each-ref", "refs/patchtrail/trees/").strip() != ""
+
+
+def test_idle_patch_trees_not_fetched(kfix, view):
+    trail, progress = _idle_trail(kfix), LogProgress()
+    v = view(name="old", subject="[PATCH] fix more io", files=("io.c",), mails=[_aged("2024-03-01")])
+    trail.prepare([v], progress)
+    assert not _trees_fetched(trail)
+    assert progress.lines == ["old: idle since 2024-03-01, maintainer trees not fetched"]
+    res = trail.evaluate(v, NullProgress())              # still evaluated, just without a tree
+    assert res.fragment["commits"] == [] and res.tree is None
+
+
+def test_idle_patch_still_found_upstream(kfix, view):
+    trail = _idle_trail(kfix)
+    v = view(subject="[PATCH] fix io", files=("io.c",), mails=[_aged("2024-03-01", "fix io")])
+    trail.prepare([v], NullProgress())
+    assert trail.evaluate(v, NullProgress()).commits_found == [(kfix.sha["F"], "fix io", "search")]
+
+
+def test_recent_patch_trees_fetched(kfix, view):
+    trail = _idle_trail(kfix)
+    v = view(subject="[PATCH] fix more io", files=("io.c",), mails=[_aged("2026-10-01")])
+    trail.prepare([v], NullProgress())
+    assert _trees_fetched(trail)
+
+
+def test_patch_without_mails_is_never_idle(kfix, view):
+    trail = _idle_trail(kfix)
+    trail.prepare([view(subject="[PATCH] fix more io", files=("io.c",), mails=[])], NullProgress())
+    assert _trees_fetched(trail)
+
+
+def test_manual_tree_always_fetched(kfix, view):
+    trail = _idle_trail(kfix)
+    v = view(subject="[PATCH] fix more io", files=("io.c",), mails=[_aged("2024-03-01")],
+             tree=(kfix.tree_url, "for-next"), tree_source="manual")
+    trail.prepare([v], NullProgress())
+    assert _trees_fetched(trail)
+
+
+def test_idle_days_from_config(kfix, view, tmp_path):
+    paths().home.mkdir(parents=True, exist_ok=True)
+    paths().config.write_text("idle_days = 30\n")
+    assert load_config(paths()).idle_days == 30
+    mails = [_aged("2026-09-01")]                        # 80 days old: idle at 30, not at 180
+    v = view(subject="[PATCH] fix more io", files=("io.c",), mails=mails)
+    short = _idle_trail(kfix, idle_days=30)
+    short.prepare([v], NullProgress())
+    assert not _trees_fetched(short)
+    longer = _idle_trail(kfix, idle_days=180)
+    longer.prepare([v], NullProgress())
+    assert _trees_fetched(longer)

@@ -49,6 +49,12 @@ listen = "0.0.0.0:8470"
 # Hours between scheduled fetches.
 interval_hours = 3
 
+# Hours before a running fetch is killed.
+# fetch_timeout_hours = 4
+
+# Days without mail after which a patch with no known commit stops fetching maintainer trees.
+# idle_days = 180
+
 # A local clone of linux.git to seed ~/.patchtrail/git/linux.git from (hardlinks).
 # seed = "~/linux.git"
 

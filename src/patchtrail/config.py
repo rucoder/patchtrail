@@ -42,6 +42,8 @@ class Config:
     addresses: list[str] = field(default_factory=list)
     listen: str = "0.0.0.0:8470"
     interval_hours: float = 3
+    fetch_timeout_hours: float = 4
+    idle_days: int = 180
     seed: str | None = None
     kernel: KernelUrls = field(default_factory=KernelUrls)
     projects: dict[str, dict] = field(default_factory=dict)
@@ -58,6 +60,8 @@ def load_config(p: Paths) -> Config:
         addresses=list(data.get("addresses", [])),
         listen=data.get("listen", Config.listen),
         interval_hours=data.get("interval_hours", Config.interval_hours),
+        fetch_timeout_hours=data.get("fetch_timeout_hours", Config.fetch_timeout_hours),
+        idle_days=data.get("idle_days", Config.idle_days),
         seed=data.get("seed"),
         kernel=kernel,
         projects=dict(data.get("projects", {})),

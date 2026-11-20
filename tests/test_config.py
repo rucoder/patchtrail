@@ -17,6 +17,7 @@ def test_paths_follow_env(monkeypatch):
 def test_defaults_without_file():
     cfg = load_config(paths())
     assert cfg.listen == "0.0.0.0:8470" and cfg.interval_hours == 3
+    assert cfg.idle_days == 180 and cfg.fetch_timeout_hours == 4
     assert cfg.kernel.next.endswith("/next/linux-next.git")
 
 
@@ -38,3 +39,11 @@ def test_my_addresses_order(monkeypatch):
 def test_version(capsys):
     assert main(["--version"]) == 0
     assert capsys.readouterr().out.strip() == "patchtrail 0.1.0"
+
+
+def test_idle_and_timeout_from_file():
+    p = paths()
+    p.home.mkdir(parents=True, exist_ok=True)
+    p.config.write_text("idle_days = 30\nfetch_timeout_hours = 1.5\n")
+    cfg = load_config(p)
+    assert cfg.idle_days == 30 and cfg.fetch_timeout_hours == 1.5

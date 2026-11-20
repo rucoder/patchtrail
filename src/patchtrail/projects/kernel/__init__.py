@@ -2,6 +2,8 @@
 """The kernel trail: a patch's commits in the maintainer's tree, linux-next,
 mainline and every maintained stable branch."""
 
+import time
+from datetime import datetime
 from pathlib import Path
 
 from patchtrail.config import Config, Paths, my_addresses
@@ -18,10 +20,12 @@ HINT = "not tagged for stable: ask stable@vger.kernel.org"
 
 
 class KernelTrail(Trail):
-    def __init__(self, paths: Paths, cfg: Config, *, search=lore.search, urlopen=None):
+    def __init__(self, paths: Paths, cfg: Config, *, search=lore.search, urlopen=None,
+                 now=time.time):
         self.cfg = cfg
         self.search = search
         self.urlopen = urlopen
+        self.now = now
         self.repo = KernelRepo(paths.linux)
         self.queue = StableQueue(paths.queue)
         self.mine = my_addresses(cfg)
@@ -41,7 +45,7 @@ class KernelTrail(Trail):
         # Trees second: which ones a patch needs depends on what mainline and next hold.
         upstream = {slug(u) for u in (k.mainline, k.next, k.stable)}
         self._upstream_found = {}
-        self._trees = {p.id: self._trees_for(p, upstream) for p in patches}
+        self._trees = {p.id: self._trees_for(p, upstream, progress) for p in patches}
         wanted = list(dict.fromkeys(t for ts in self._trees.values() for t in ts))
         every = {u for u, b in wanted if b == "*"}
         wanted = [(u, b) for u, b in wanted if b == "*" or u not in every]
@@ -49,7 +53,7 @@ class KernelTrail(Trail):
             self.repo.fetch_trees(wanted, progress)
         self.queue.update(k.queue, progress)
 
-    def _trees_for(self, p: PatchView, upstream: set[str]) -> list[tuple[str, str]]:
+    def _trees_for(self, p: PatchView, upstream: set[str], progress: Progress) -> list[tuple[str, str]]:
         if p.tree and p.tree_source == "manual":
             return [p.tree]
         known = [k[0] for k in self._known(p)]
@@ -61,6 +65,12 @@ class KernelTrail(Trail):
             sha = search_commit(self.repo, p.subject, p.author, p.posted_at, [NEXT, MAINLINE])
             if sha:
                 self._upstream_found[p.id] = sha
+                return []
+        if not known and p.mails:
+            newest = max(m.date for m in p.mails)
+            if newest < self.now() - self.cfg.idle_days * 86400:
+                day = datetime.fromtimestamp(newest).strftime("%Y-%m-%d")
+                progress.log(f"{p.name}: idle since {day}, maintainer trees not fetched")
                 return []
         if p.tree:
             return [p.tree]
