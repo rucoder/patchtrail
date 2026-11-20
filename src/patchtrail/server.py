@@ -9,6 +9,7 @@ import json
 import mimetypes
 import re
 import signal
+import socket
 import sys
 import threading
 import time
@@ -29,6 +30,7 @@ NO_BUNDLE = (b"<!doctype html><html><body><p>patchtrail's web page was not built
              b"a release, or run <code>make install</code> in a checkout. The API works: "
              b"<a href=\"/api/status\">/api/status</a></p></body></html>")
 MAX_BODY = 1 << 20
+_NUM = re.compile(r"[0-9]{1,18}")
 
 
 @dataclass
@@ -130,7 +132,7 @@ class App:
             return {}
         try:
             body = json.loads(req.body)
-        except (ValueError, UnicodeDecodeError) as e:
+        except (ValueError, UnicodeDecodeError, RecursionError) as e:
             raise _BadRequest("body is not valid JSON") from e
         if not isinstance(body, dict):
             raise _BadRequest("body must be a JSON object")
@@ -149,13 +151,12 @@ class App:
                               running=views.run_dict(e.run) if e.run else None)
             return _json(202, self._status(conn))
         if m == "GET" and n == 3 and parts[0] == "runs" and parts[2] == "log":
-            if not parts[1].isdigit():
-                return None
-            try:
-                after = int(req.query.get("after", "0"))
-            except ValueError:
-                raise _BadRequest("after must be an integer") from None
-            log = views.run_log(conn, int(parts[1]), after)
+            if not _NUM.fullmatch(parts[1]):
+                return _error(404, "no such run")
+            after = req.query.get("after", "0")
+            if not _NUM.fullmatch(after):
+                raise _BadRequest("after must be a non-negative integer")
+            log = views.run_log(conn, int(parts[1]), int(after))
             return _json(200, log) if log is not None else _error(404, "no such run")
         if parts[:1] != ["patches"]:
             return None
@@ -203,15 +204,12 @@ class App:
         row, created = actions.register(
             conn, name=name, msgid=msgid, follow=follow, note=_opt_str(body.get("note"), "note"),
             links=_str_list(body.get("links"), "links"), now=int(time.time()))
-        if created:
-            try:      # lore only: seconds, not the kernel trail's fetches
-                self.runner.start("api", [row["name"]], lore_only=True)
-            except fetch.Busy:
-                pass          # the next run follows the patch
-        mid = lore.parse_msgid(msgid)
-        owner = store.revision_by_msgid(conn, mid)
-        row = store.patch_by_id(conn, owner["patch_id"] if owner else row["id"])
-        return _json(201 if created else 200, actions.add_json(conn, row, mid))
+        try:          # lore only: seconds, not the kernel trail's fetches
+            self.runner.start("api", [row["name"]], lore_only=True)
+        except fetch.Busy:
+            pass              # the next run follows the patch
+        return _json(201 if created else 200,
+                     actions.add_json(conn, row, lore.parse_msgid(msgid)))
 
     def _close(self, conn, row, body):
         reason = body.get("reason")
@@ -249,12 +247,19 @@ class App:
         target = (root / rel).resolve() if rel else root
         if target != root and root not in target.parents:
             return _error(404, "not found")
-        if rel and target.is_file():
+        try:
+            is_file = bool(rel) and target.is_file()
+        except OSError:                      # a name too long for the filesystem
+            return _error(404, "not found")
+        if is_file:
             ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
             headers = {}
             if re.match(r"assets/", rel):
                 headers["Cache-Control"] = "max-age=31536000, immutable"
-            return Response(200, target.read_bytes(), ctype, headers)
+            try:
+                return Response(200, target.read_bytes(), ctype, headers)
+            except OSError:
+                return _error(404, "not found")
         index = root / "index.html"
         if index.is_file():
             return Response(200, index.read_bytes(), "text/html; charset=utf-8",
@@ -287,16 +292,28 @@ def parse_listen(listen: str) -> tuple[str, int]:
     return (m.group(1), int(m.group(2))) if m.group(1) else (m.group(3), int(m.group(4)))
 
 
+class _Server6(ThreadingHTTPServer):
+    address_family = socket.AF_INET6
+
+
 def _handler(app: App):
     class Handler(BaseHTTPRequestHandler):
         protocol_version = "HTTP/1.1"
 
         def _serve(self):
             url = urlsplit(self.path)
-            length = int(self.headers.get("Content-Length") or 0)
-            if length > MAX_BODY:
+            resp = None
+            raw_len = (self.headers.get("Content-Length") or "0").strip()
+            length = int(raw_len) if _NUM.fullmatch(raw_len) else -1
+            if self.command not in ("GET", "HEAD") and \
+                    "chunked" in self.headers.get("Transfer-Encoding", "").lower():
+                resp = _error(411, "chunked bodies are not supported; send Content-Length")
+            elif length < 0:
+                resp = _error(400, "bad Content-Length")
+            elif length > MAX_BODY:
                 resp = _error(413, "body too large")
-                self.close_connection = True
+            if resp is not None:
+                self.close_connection = True      # the body, if any, was not read
             else:
                 req = Request(self.command, url.path, dict(parse_qsl(url.query)),
                               {k.lower(): v for k, v in self.headers.items()},
@@ -333,13 +350,15 @@ def serve(paths: Paths, cfg: Config, listen: str | None = None, *,
     scheduler = Scheduler(runner, paths, interval_s=cfg.interval_hours * 3600)
     app = App(paths, cfg, runner, scheduler)
     try:
-        httpd = ThreadingHTTPServer((host, port), _handler(app))
-    except OSError as e:
+        cls = _Server6 if ":" in host else ThreadingHTTPServer
+        httpd = cls((host, port), _handler(app))
+    except OSError as e:          # socket.gaierror is one too
         if e.errno == errno.EADDRINUSE:
             print(f"ptl: {listen} is in use; is the service running? (ptl service status)",
                   file=sys.stderr)
-            return 1
-        raise
+        else:
+            print(f"ptl: cannot listen on {listen}: {e.strerror or e}", file=sys.stderr)
+        return 1
     httpd.daemon_threads = True
     stop = stop or threading.Event()
     if threading.current_thread() is threading.main_thread():
@@ -361,9 +380,9 @@ def serve(paths: Paths, cfg: Config, listen: str | None = None, *,
         pass
     finally:
         stop.set()
+        httpd.shutdown()           # first: no request may start a child from here on
+        web.join()
         sched.join()
         runner.terminate()
-        httpd.shutdown()
-        web.join()
         httpd.server_close()
     return 0

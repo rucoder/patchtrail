@@ -149,6 +149,7 @@ def test_register_201_200_409_400(app):
     assert r.status == 201 and j["name"] == "newp" and j["note"] == "n"
     r, j = call(app, "POST", "/api/patches", {"name": "other", "msgid": "new1@x"})
     assert r.status == 200 and j["name"] == "newp"
+    assert [c[1] for c in app.runner.calls] == [["newp"], ["newp"]]    # fetched on repeats too
     r, j = call(app, "POST", "/api/patches", {"name": "erofs", "msgid": "new2@x"})
     assert r.status == 409
     for body in ({"name": "bad name", "msgid": "a@b"}, {"name": "x", "msgid": "nomsgid"},
@@ -232,13 +233,50 @@ def test_spa_fallback_and_assets(app):
     assert r.headers["Cache-Control"] == "max-age=31536000, immutable"
     assert "javascript" in r.content_type
     for p in ("/../pyproject.toml", "/%2e%2e/pyproject.toml", "/assets/../../x", "/%2e%2e%2f"):
-        r, _ = call(app, "GET", p)
-        assert r.status != 200 or r.body == b"<html>page</html>", p
+        assert call(app, "GET", p)[0].status == 404, p
     (app.static_dir.parent / "secret.txt").write_text("secret")
     r, _ = call(app, "GET", "/%2e%2e/secret.txt")
     assert r.status == 404 and b"secret" not in r.body
     r, _ = call(app, "GET", "/../secret.txt")
     assert r.status == 404 and b"secret" not in r.body
+
+
+def test_long_path_404(app):
+    r, _ = call(app, "GET", "/" + "a" * 300)
+    assert r.status == 404 or r.body == b"<html>page</html>"
+    assert call(app, "GET", "/assets/" + "a" * 300)[0].status in (200, 404)
+
+
+def test_bad_run_ids_and_after(app):
+    for p in ("/api/runs/%C2%B2/log", "/api/runs/99999999999999999999/log"):
+        assert call(app, "GET", p)[0].status == 404, p
+    for p in ("/api/runs/1/log?after=99999999999999999999", "/api/runs/1/log?after=%C2%B2",
+              "/api/runs/1/log?after=-1", "/api/runs/1/log?after=x"):
+        assert call(app, "GET", p)[0].status == 400, p
+
+
+def test_deeply_nested_json_400(app):
+    r, _ = call(app, "POST", "/api/patches/erofs/read", raw=b"[" * 200000)
+    assert r.status == 400
+
+
+def test_origin_without_host_and_other_methods(app):
+    r, _ = call(app, "POST", "/api/patches/erofs/hide",
+                headers={"origin": "http://10.0.0.1:8470", "host": ""})
+    assert r.status == 403          # empty Host: no match
+    h = {"origin": "http://evil.example"}
+    assert call(app, "PUT", "/api/patches/erofs/note", {"note": "x"}, headers=h)[0].status == 403
+    assert call(app, "DELETE", "/api/patches/erofs", headers=h)[0].status == 403
+    r = app.handle(server.Request("POST", "/api/patches/erofs/hide", {},
+                                  {"origin": "http://10.0.0.1:8470",
+                                   "content-type": "application/json"}, b"{}"))
+    assert r.status == 403          # no Host header at all
+
+
+def test_urlencoded_post_415(app):
+    r, _ = call(app, "POST", "/api/patches/erofs/hide",
+                headers={"content-type": "application/x-www-form-urlencoded"}, raw=b"a=b")
+    assert r.status == 415
 
 
 def test_no_bundle_page(populated, runner, tmp_path):
@@ -252,6 +290,106 @@ def test_parse_listen():
     assert server.parse_listen("[::1]:9") == ("::1", 9)
     with pytest.raises(ValueError):
         server.parse_listen("nonsense")
+
+
+@pytest.fixture
+def live(populated):
+    # A recent run keeps the scheduler from starting a real fetch child.
+    populated.execute("INSERT INTO runs(trigger, started_at, finished_at, status) "
+                      "VALUES ('cli', ?, ?, 'ok')", (int(time.time()),) * 2)
+    populated.commit()
+    started, stop, out = threading.Event(), threading.Event(), {}
+
+    def ready(host, port):
+        out["port"] = port
+        started.set()
+
+    t = threading.Thread(target=lambda: out.update(rc=server.serve(
+        paths(), Config(), "127.0.0.1:0", ready=ready, stop=stop)))
+    t.start()
+    assert started.wait(10)
+    yield out["port"]
+    stop.set()
+    t.join(30)
+    assert not t.is_alive() and out["rc"] == 0
+
+
+def _raw(port, lines: list[str], body: bytes = b"") -> tuple[int, bytes]:
+    import socket
+
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as s:
+        s.sendall(("\r\n".join(lines) + "\r\n\r\n").encode() + body)
+        data = b""
+        while chunk := s.recv(65536):
+            data += chunk
+            if b"\r\n\r\n" in data and data.endswith(b"}"):
+                break
+    return int(data.split(b" ", 2)[1]), data
+
+
+def test_bad_content_length(live):
+    base = ["POST /api/patches/erofs/read HTTP/1.1", "Host: x", "Content-Type: application/json",
+            "Connection: close"]
+    for cl in ("-1", "abc", "1.5", "\u00b2"):
+        status, _ = _raw(live, base + [f"Content-Length: {cl}"])
+        assert status == 400, cl
+    assert _raw(live, base + [f"Content-Length: {1 << 21}"])[0] == 413
+
+
+def test_chunked_body_411(live):
+    status, _ = _raw(live, ["POST /api/patches/erofs/read HTTP/1.1", "Host: x",
+                            "Content-Type: application/json", "Transfer-Encoding: chunked",
+                            "Connection: close"], b"2\r\n{}\r\n0\r\n\r\n")
+    assert status == 411
+
+
+def test_long_path_over_socket(live):
+    status, _ = _raw(live, ["GET /" + "a" * 300 + " HTTP/1.1", "Host: x", "Connection: close"])
+    assert status in (200, 404)        # served as the page; never a 500
+
+
+def test_serve_ipv6(populated, capsys):
+    import socket
+
+    if not socket.has_ipv6:
+        pytest.skip("no IPv6")
+    populated.execute("INSERT INTO runs(trigger, started_at, status) VALUES ('cli', ?, 'ok')",
+                      (int(time.time()),))
+    populated.commit()
+    started, stop, out = threading.Event(), threading.Event(), {}
+    t = threading.Thread(target=lambda: out.update(rc=server.serve(
+        paths(), Config(), "[::1]:0", ready=lambda h, p: (out.update(port=p), started.set()),
+        stop=stop)))
+    t.start()
+    try:
+        if not started.wait(5):
+            t.join(5)
+            pytest.skip("no IPv6 loopback")
+        c = http.client.HTTPConnection("::1", out["port"], timeout=10)
+        c.request("GET", "/api/patches/nope")
+        assert c.getresponse().status == 404
+    finally:
+        stop.set()
+        t.join(30)
+
+
+def test_serve_unresolvable_host(populated, capsys):
+    assert server.serve(paths(), Config(), "no-such-host.invalid:80") == 1
+    assert "ptl: cannot listen on no-such-host.invalid:80:" in capsys.readouterr().err
+
+
+def test_shutdown_stops_http_before_runner(populated, monkeypatch):
+    order, stop = [], threading.Event()
+    populated.execute("INSERT INTO runs(trigger, started_at, status) VALUES ('cli', ?, 'ok')",
+                      (int(time.time()),))
+    populated.commit()
+    monkeypatch.setattr(server.Runner, "terminate", lambda self: order.append("terminate"))
+    orig = server.ThreadingHTTPServer.shutdown
+    monkeypatch.setattr(server.ThreadingHTTPServer, "shutdown",
+                        lambda self: (order.append("shutdown"), orig(self)))
+    stop.set()
+    assert server.serve(paths(), Config(), "127.0.0.1:0", stop=stop) == 0
+    assert order == ["shutdown", "terminate"]
 
 
 def test_serve_socket_roundtrip(populated, capsys):
