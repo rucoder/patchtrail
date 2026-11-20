@@ -59,8 +59,9 @@ Approved mockup: `docs/mockups/board-with-detail.html`. Open items from Plan 1:
   - Allowed, case-insensitive and with any port: an IP literal (IPv4, or bracketed IPv6),
     `localhost`, `socket.gethostname()`, `socket.getfqdn()`, and each name in the config option
     `hosts` (`Config.hosts: list[str]`, default empty; `ptl setup` writes it commented out).
-  - Anything else, a missing Host included, answers 403
-    `{"error": "unknown Host <name>; add it to hosts in config.toml"}`. Static files stay open.
+  - Anything else answers 403 `{"error": "unknown Host <name>; add it to hosts in config.toml"}`.
+    A missing or malformed Host header answers 403 `{"error": "missing or malformed Host
+    header"}`. Static files stay open.
 - Every request that changes state (POST, PUT, DELETE) must also pass two checks:
   - **(a)** If it carries an `Origin` header, the Origin must equal `http://` + its `Host` header.
     Otherwise answer 403.
